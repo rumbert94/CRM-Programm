@@ -4,7 +4,7 @@ import * as sync from './sync.js';
 const buildPdf = async (...a) => (await import('./pdf.js')).buildPdf(...a);
 import { buildCII, checkEInvoice } from './einvoice.js';
 import {
-  LAYOUT_DEFAULTS, esc, uid, eur, fmtDate, fmtDateTime, today, addDays, calcTotals, parseNum, UNITS, KINDS, STATUS, debounce, download, safeFile, fmtNum,
+  LAYOUT_DEFAULTS, OLD_PREFIXES, unitLabel, numberPrefix, docFileName, numberItems, esc, uid, eur, fmtDate, fmtDateTime, today, addDays, calcTotals, parseNum, UNITS, KINDS, STATUS, debounce, download, safeFile, fmtNum,
 } from './util.js';
 
 const app = document.getElementById('app');
@@ -26,15 +26,18 @@ function toast(msg, kind = '') {
 }
 
 function nextNumber(kind, c) {
-  const year = new Date().getFullYear();
-  const pattern = (c.numbering?.[kind]?.prefix ?? KINDS[kind].prefix).replace('{JAHR}', year);
-  let max = Number(c.numbering?.[kind]?.start || 1) - 1;
+  const { prefix, digits } = numberPrefix(kind, c);
+  const cfg = c.numbering?.[kind] || {};
+  const startApplies = !cfg.startYear || Number(cfg.startYear) === new Date().getFullYear();
+  let max = startApplies ? Number(cfg.start || 1) - 1 : 0;
   for (const d of db.allRaw()) {
-    if (d.type !== 'doc' || d.companyId !== c.id || d.kind !== kind || !d.number?.startsWith(pattern)) continue;
-    const n = parseInt(d.number.slice(pattern.length), 10);
+    if (d.type !== 'doc' || d.companyId !== c.id || d.kind !== kind || !d.number?.startsWith(prefix)) continue;
+    const rest = d.number.slice(prefix.length);
+    if (!/^\d+$/.test(rest)) continue;
+    const n = parseInt(rest, 10);
     if (n > max) max = n;
   }
-  return pattern + String(max + 1).padStart(4, '0');
+  return prefix + String(max + 1).padStart(digits, '0');
 }
 
 function nextCustomerNumber(c) {
@@ -82,6 +85,7 @@ function shell(content, active = '') {
     ['#/belege/angebot', 'Angebote', 'angebot'],
     ['#/belege/auftrag', 'Aufträge', 'auftrag'],
     ['#/belege/rechnung', 'Rechnungen', 'rechnung'],
+    ['#/vorlagen', 'Vorlagen', 'vorlagen'],
     ['#/einstellungen', 'Einstellungen', 'settings'],
   ];
   app.innerHTML = `
@@ -333,8 +337,8 @@ async function viewDoc(id, params, kindForNew) {
   const reverseAllowed = !c.smallBusiness;
 
   shell(`
-  <div class="bar"><h1>${d.isCreditNote ? 'Storno' : kind.label} ${esc(d.number || '(Entwurf)')}</h1>
-    <span class="badge ${esc(d.status)}">${esc(d.status)}</span></div>
+  <div class="bar"><h1>${d.isCreditNote ? 'Storno' : kind.label} ${d.number ? 'Nr. ' + esc(d.number) : '(Entwurf)'}</h1>
+    <span><span class="badge ${esc(d.status)}">${esc(d.status)}</span>${locked ? ' <span class="badge einv">✓ E-Rechnung (ZUGFeRD)</span>' : ''}</span></div>
   ${d.sourceNumber ? `<p class="muted">Erstellt aus ${esc(d.sourceNumber)}</p>` : ''}
   ${locked ? `<p class="info">Diese Rechnung ist abgeschlossen und kann nicht mehr geändert werden (GoBD). Für Korrekturen bitte stornieren.</p>` : ''}
   <form id="f" class="grid">
@@ -344,11 +348,13 @@ async function viewDoc(id, params, kindForNew) {
     </select><small><a href="#/kunde/neu">+ neuen Kunden anlegen</a></small></label>
     ${field('Datum', 'date', d.date, { type: 'date', attrs: dis })}
     ${d.kind === 'angebot' ? field('Gültig bis', 'validUntil', d.validUntil, { type: 'date', attrs: dis }) : ''}
-    ${d.kind === 'rechnung' ? field('Leistungsdatum', 'serviceDate', d.serviceDate, { type: 'date', attrs: dis }) : ''}
-    ${d.kind === 'rechnung' ? field('Leistungszeitraum (Text, optional)', 'serviceDateText', d.serviceDateText, { attrs: dis + ' placeholder="z. B. 03.–14.11.2026"' }) : ''}
+    ${d.kind !== 'angebot' ? select('Leistung', 'serviceMode', d.serviceMode || 'date', [{ value: 'date', label: 'Leistungsdatum' }, { value: 'period', label: 'Leistungszeitraum' }], dis + ' id="serviceMode"') : ''}
+    ${d.kind !== 'angebot' ? `<span class="svc-date" ${d.serviceMode === 'period' ? 'hidden' : ''}>${field('Leistungsdatum', 'serviceDate', d.serviceDate, { type: 'date', attrs: dis })}</span>
+      <span class="svc-period" ${d.serviceMode === 'period' ? '' : 'hidden'}>${field('Leistung von', 'serviceFrom', d.serviceFrom, { type: 'date', attrs: dis })}</span>
+      <span class="svc-period" ${d.serviceMode === 'period' ? '' : 'hidden'}>${field('Leistung bis', 'serviceTo', d.serviceTo, { type: 'date', attrs: dis })}</span>` : ''}
     ${d.kind === 'rechnung' ? field('Fällig am', 'dueDate', d.dueDate, { type: 'date', attrs: dis }) : ''}
     ${select('Status', 'status', d.status, STATUS[d.kind].map((s) => ({ value: s, label: s })))}
-    ${field('Betreff / Bauvorhaben', 'subject', d.subject, { full: true, attrs: dis })}
+    ${field('Betreff / Bauvorhaben (mehrzeilig möglich)', 'subject', d.subject, { type: 'textarea', full: true, attrs: dis })}
     ${field('Bestellnummer des Kunden', 'orderReference', d.orderReference, { attrs: dis })}
     ${reverseAllowed ? select('Umsatzsteuer', 'taxMode', d.taxMode || 'normal', [{ value: 'normal', label: 'normal' }, { value: 'reverse', label: '§13b – Kunde schuldet USt (Bauleistung)' }], dis) : '<p class="muted">Kleinunternehmer: keine USt.</p>'}
     ${d.kind === 'rechnung' ? field('Bereits gezahlt / Anzahlung (€)', 'prepaid', d.prepaid ? fmtNum(d.prepaid) : '', { attrs: dis + ' inputmode="decimal"' }) : ''}
@@ -357,7 +363,7 @@ async function viewDoc(id, params, kindForNew) {
 
   <h2>Positionen</h2>
   <div id="items"></div>
-  ${locked ? '' : '<div class="actions"><button class="btn" id="addItem">+ Position</button></div>'}
+  ${locked ? '' : '<div class="actions"><button class="btn" id="addItem">+ Position</button><button class="btn" id="addTitle">+ Titel</button><button class="btn" id="fromTpl">+ Aus Vorlagen</button></div>'}
   <div id="totals" class="totals"></div>
 
   <form id="f2" class="grid">
@@ -366,9 +372,10 @@ async function viewDoc(id, params, kindForNew) {
   </form>
 
   <div class="actions sticky">
-    <button class="btn" id="pdf">PDF ansehen</button>
+    ${d.kind === 'rechnung' && d.locked
+      ? '<button class="btn primary" id="zugferd">E-Rechnung (PDF) herunterladen</button><button class="btn" id="pdf">Ansehen</button><button class="btn" id="xrechnung">XRechnung (nur XML, für Behörden)</button>'
+      : `<button class="btn" id="pdf">${d.kind === 'rechnung' ? 'Vorschau (Entwurf)' : 'PDF ansehen'}</button>`}
     ${d.kind === 'rechnung' && !d.locked ? '<button class="btn primary" id="finalize">Rechnung abschließen</button>' : ''}
-    ${d.kind === 'rechnung' && d.locked ? '<button class="btn primary" id="zugferd">E-Rechnung ZUGFeRD</button><button class="btn" id="xrechnung">XRechnung (XML)</button>' : ''}
     ${d.kind === 'angebot' ? '<button class="btn" id="toAuftrag">→ Auftrag</button><button class="btn" id="toRechnung">→ Rechnung</button>' : ''}
     ${d.kind === 'auftrag' ? '<button class="btn" id="toRechnung">→ Rechnung</button>' : ''}
     ${!d.isCreditNote && d.kind === 'rechnung' && d.locked && d.status !== 'Storniert' ? '<button class="btn danger" id="storno">Stornieren</button>' : ''}
@@ -392,16 +399,20 @@ async function viewDoc(id, params, kindForNew) {
   };
   const autosave = debounce(save, 700);
 
+  const tools = (i) => locked ? '' : `<span class="item-tools"><button class="link" data-up="${i}" ${i === 0 ? 'disabled' : ''} title="nach oben">▲</button><button class="link" data-down="${i}" ${i === d.items.length - 1 ? 'disabled' : ''} title="nach unten">▼</button>${d.items[i].type === 'title' ? '' : `<button class="link" data-tpl="${i}" title="Als Vorlage speichern">☆ Vorlage</button>`}<button class="link danger" data-rm="${i}" title="entfernen">✕</button></span>`;
   const renderItems = () => {
     const box = $('#items');
+    const nums = numberItems(d.items);
     box.innerHTML = d.items.length
-      ? d.items.map((it, i) => `
+      ? d.items.map((it, i) => it.type === 'title' ? `
+      <div class="item title-item" data-i="${i}">
+        <div class="item-head"><b>Titel ${nums[i].pos}</b>${tools(i)}</div>
+        <input data-k="title" placeholder="Titel, z. B. Abbrucharbeiten" value="${esc(it.title)}" ${dis}>
+      </div>` : `
       <div class="item" data-i="${i}">
-        <div class="item-head"><b>${i + 1}.</b>
-          ${locked ? '' : `<span class="item-tools"><button class="link" data-up="${i}" ${i === 0 ? 'disabled' : ''}>▲</button><button class="link" data-down="${i}" ${i === d.items.length - 1 ? 'disabled' : ''}>▼</button><button class="link danger" data-rm="${i}">✕</button></span>`}
-        </div>
-        <input data-k="title" placeholder="Leistung / Artikel" value="${esc(it.title)}" ${dis}>
-        <textarea data-k="desc" rows="2" placeholder="Beschreibung (optional)" ${dis}>${esc(it.desc)}</textarea>
+        <div class="item-head"><b>Pos. ${nums[i].pos}</b>${tools(i)}</div>
+        <input data-k="title" placeholder="Kurztext (optional, wird fett gedruckt)" value="${esc(it.title)}" ${dis}>
+        <textarea data-k="desc" rows="3" placeholder="Beschreibung" ${dis}>${esc(it.desc)}</textarea>
         <div class="item-row">
           <label>Menge<input data-k="qty" inputmode="decimal" value="${esc(String(it.qty ?? '').replace('.', ','))}" ${dis}></label>
           <label>Einheit<select data-k="unit" ${dis}>${UNITS.map((u) => `<option value="${u.code}" ${u.code === it.unit ? 'selected' : ''}>${u.label}</option>`).join('')}</select></label>
@@ -428,7 +439,7 @@ async function viewDoc(id, params, kindForNew) {
       if (i === undefined || !el.dataset.k) return;
       d.items[i][el.dataset.k] = el.dataset.k === 'qty' || el.dataset.k === 'price' || el.dataset.k === 'vat' ? (el.dataset.k === 'vat' ? Number(el.value) : el.value) : el.value;
       const lt = el.closest('.item').querySelector('.line-total');
-      lt.textContent = eur(calcTotals({ items: [d.items[i]] }, c).net);
+      if (lt) lt.textContent = eur(calcTotals({ items: [d.items[i]] }, c).net);
       renderTotals();
       autosave();
     });
@@ -438,12 +449,30 @@ async function viewDoc(id, params, kindForNew) {
       if (!b) return;
       e.preventDefault();
       const mv = (from, to) => d.items.splice(to, 0, d.items.splice(from, 1)[0]);
+      if (b.dataset.tpl !== undefined) {
+        const it = d.items[Number(b.dataset.tpl)];
+        if (!(it.title || it.desc)) return toast('Position ist leer.', 'err');
+        saveTemplate(it);
+        return;
+      }
       if (b.dataset.rm !== undefined) d.items.splice(Number(b.dataset.rm), 1);
       if (b.dataset.up !== undefined) mv(Number(b.dataset.up), Number(b.dataset.up) - 1);
       if (b.dataset.down !== undefined) mv(Number(b.dataset.down), Number(b.dataset.down) + 1);
       renderItems();
       autosave();
     });
+    $('#addTitle').onclick = () => {
+      d.items.push({ id: uid(), type: 'title', title: '' });
+      renderItems();
+      $$('#items .item').at(-1).querySelector('input').focus();
+    };
+    $('#fromTpl').onclick = () =>
+      pickTemplate((tpl) => {
+        d.items.push({ id: uid(), title: tpl.title || '', desc: tpl.desc || '', qty: '1', unit: tpl.unit || 'H87', price: tpl.price ?? '', vat: tpl.vat ?? c.defaultVat ?? 19 });
+        db.put({ ...tpl, usage: (tpl.usage || 0) + 1 }, { silent: true });
+        renderItems();
+        autosave();
+      });
     $('#addItem').onclick = () => {
       d.items.push({ id: uid(), title: '', desc: '', qty: '1', unit: 'H87', price: '', vat: c.defaultVat ?? 19 });
       renderItems();
@@ -461,12 +490,17 @@ async function viewDoc(id, params, kindForNew) {
   });
 
   const customer = () => d.customerSnapshot || db.get(d.customerId);
-  const fileBase = () => safeFile(`${d.number || 'Entwurf'} ${customer()?.name || ''}`);
+  const fileBase = () => safeFile(docFileName(d));
+  $('#serviceMode')?.addEventListener('change', (e) => {
+    const p = e.target.value === 'period';
+    $$('.svc-period').forEach((x) => (x.hidden = !p));
+    $$('.svc-date').forEach((x) => (x.hidden = p));
+  });
 
   $('#pdf').onclick = async () => {
     if (!(await save())) return;
     try {
-      const bytes = await buildPdf(d, c, customer());
+      const bytes = await buildPdf(d, d.locked ? companyForDoc() : c, customer(), { zugferd: !!d.locked });
       openPdf(bytes, fileBase() + '.pdf');
     } catch (e) {
       console.error(e);
@@ -571,15 +605,113 @@ function openPdf(bytes, name) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// ---------- Positionsvorlagen ----------
+async function saveTemplate(it) {
+  const dup = db.all('article', (a) => a.companyId === companyId && a.title === it.title && a.desc === it.desc);
+  const base = dup[0] || { type: 'article', companyId, usage: 0 };
+  await db.put({ ...base, title: it.title || '', desc: it.desc || '', unit: it.unit || 'H87', price: parseNum(it.price), vat: Number(it.vat ?? 19) });
+  toast(dup.length ? 'Vorlage aktualisiert' : 'Als Vorlage gespeichert');
+}
+
+const tplMatches = (a, q) => !q || [a.title, a.desc].join(' ').toLowerCase().includes(q.toLowerCase());
+const tplLabel = (a) => a.title || (a.desc || '').split('\n')[0].slice(0, 80);
+
+function pickTemplate(onPick) {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="sheet"><div class="bar"><h2>Vorlage einfügen</h2><button class="link" data-close>Schließen</button></div>
+    <input class="search" placeholder="Suchen …" id="tplQ"><ul class="list" id="tplList"></ul></div>`;
+  document.body.appendChild(ov);
+  const all = db.all('article', (a) => a.companyId === companyId).sort((a, b) => (b.usage || 0) - (a.usage || 0) || tplLabel(a).localeCompare(tplLabel(b)));
+  const render = (q) => {
+    const list = all.filter((a) => tplMatches(a, q));
+    $('#tplList', ov).innerHTML = list.length
+      ? list.map((a) => `<li><a href="javascript:void 0" data-id="${a.id}"><div><b>${esc(tplLabel(a))}</b><br><small>${esc((a.title ? a.desc : '') || '').slice(0, 120)}</small></div><div class="right">${eur(a.price)}<br><small>je ${esc(unitLabel(a.unit))}</small></div></a></li>`).join('')
+      : '<li class="empty" style="padding:1rem">Keine Vorlagen gefunden. Speichere Positionen mit „☆ Vorlage“.</li>';
+  };
+  render('');
+  const close = () => ov.remove();
+  ov.addEventListener('click', (e) => {
+    if (e.target === ov || e.target.closest('[data-close]')) return close();
+    const a = e.target.closest('[data-id]');
+    if (a) {
+      onPick(db.get(a.dataset.id));
+      close();
+      toast('Position eingefügt');
+    }
+  });
+  $('#tplQ', ov).oninput = (e) => render(e.target.value);
+  $('#tplQ', ov).focus();
+}
+
+function viewTemplates() {
+  const q = sessionStorage.getItem('tplQ') || '';
+  const list = db
+    .all('article', (a) => a.companyId === companyId)
+    .filter((a) => tplMatches(a, q))
+    .sort((a, b) => tplLabel(a).localeCompare(tplLabel(b)));
+  const editId = sessionStorage.getItem('tplEdit');
+  const ed = editId === 'neu' ? { type: 'article', companyId, unit: 'H87', vat: company().defaultVat ?? 19 } : editId ? db.get(editId) : null;
+  shell(`
+  <div class="bar"><h1>Positionsvorlagen</h1><button class="btn primary" id="newTpl">+ Neue Vorlage</button></div>
+  <p class="muted">Häufige Leistungen hier ablegen oder im Beleg bei einer Position auf „☆ Vorlage“ tippen. Im Beleg fügst du sie mit „+ Aus Vorlagen“ ein.</p>
+  ${ed ? `<form id="tf" class="grid card">
+    ${field('Kurztext (fett)', 'title', ed.title, { full: true })}
+    ${field('Beschreibung', 'desc', ed.desc, { type: 'textarea', full: true })}
+    ${select('Einheit', 'unit', ed.unit, UNITS.map((u) => ({ value: u.code, label: u.label })))}
+    ${field('Einzelpreis netto €', 'price', ed.price != null ? String(ed.price).replace('.', ',') : '', { attrs: 'inputmode="decimal"' })}
+    ${select('USt', 'vat', ed.vat ?? 19, [19, 7, 0].map((v) => ({ value: v, label: v + ' %' })))}
+    <div class="actions full"><button class="btn primary">Speichern</button><button type="button" class="btn" id="tplCancel">Abbrechen</button>${ed.id ? '<button type="button" class="btn danger" id="tplDel">Löschen</button>' : ''}</div>
+  </form>` : ''}
+  <input class="search" id="q" placeholder="Vorlagen suchen …" value="${esc(q)}">
+  ${list.length ? `<ul class="list">${list.map((a) => `<li><a href="javascript:void 0" data-edit="${a.id}"><div><b>${esc(tplLabel(a))}</b><br><small>${esc((a.title ? a.desc : '') || '').slice(0, 140)}</small></div><div class="right">${eur(a.price)}<br><small>je ${esc(unitLabel(a.unit))}</small></div></a></li>`).join('')}</ul>` : '<p class="empty">Noch keine Vorlagen.</p>'}
+  `, 'vorlagen');
+  const reopen = (id) => {
+    if (id) sessionStorage.setItem('tplEdit', id);
+    else sessionStorage.removeItem('tplEdit');
+    viewTemplates();
+  };
+  $('#newTpl').onclick = () => reopen('neu');
+  $$('[data-edit]').forEach((a) => (a.onclick = () => reopen(a.dataset.edit)));
+  if (ed) {
+    $('#tf').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = formData(e.target);
+      await db.put({ ...ed, ...f, price: parseNum(f.price), vat: Number(f.vat) });
+      toast('Vorlage gespeichert');
+      reopen(null);
+    };
+    $('#tplCancel').onclick = () => reopen(null);
+    $('#tplDel') && ($('#tplDel').onclick = async () => {
+      if (!confirm('Vorlage löschen?')) return;
+      await db.remove(ed.id);
+      reopen(null);
+    });
+  }
+  const qi = $('#q');
+  qi.oninput = debounce(() => {
+    sessionStorage.setItem('tplQ', qi.value);
+    viewTemplates();
+    const n = $('#q');
+    n.focus();
+    n.setSelectionRange(n.value.length, n.value.length);
+  }, 250);
+}
+
 // ---------- Firma ----------
 async function viewCompany(id) {
   const isNew = id === 'neu';
   const c = isNew
-    ? { id: uid(), type: 'company', country: 'DE', paymentDays: 14, defaultVat: 19, layout: { ...LAYOUT_DEFAULTS } }
+    ? { id: uid(), type: 'company', country: 'DE', paymentDays: 14, defaultVat: 19, layout2: { ...LAYOUT_DEFAULTS } }
     : db.get(id);
   if (!c) return go('#/einstellungen');
-  const L = { ...LAYOUT_DEFAULTS, ...(c.layout || {}) };
+  const L = { ...LAYOUT_DEFAULTS, ...(c.layout2 || {}) };
   const lh = c.letterheadFileId ? await db.getFile(c.letterheadFileId) : null;
+  const logoF = c.logoFileId ? await db.getFile(c.logoFileId) : null;
+  const pfx = (k) => {
+    const v = n[k]?.prefix;
+    return !v || OLD_PREFIXES.includes(v) ? KINDS[k].prefix : v;
+  };
   const n = c.numbering || {};
   const t = c.texts || {};
   shell(`
@@ -609,28 +741,48 @@ async function viewCompany(id) {
       ${field('BIC', 'bic', c.bic)}
       ${field('Kontoinhaber (falls abweichend)', 'accountHolder', c.accountHolder)}
     </div>
-    <h2>Briefkopf</h2>
-    <p class="muted">Lade deinen Briefbogen als PDF (am besten) oder als Bild (PNG/JPG, ganze A4-Seite) hoch. Hat das PDF eine zweite Seite, wird sie als Folgeseite verwendet. Ohne Briefkopf wird ein schlichter Kopf aus den Stammdaten erzeugt.</p>
+    <h2>Logo & Fußzeile</h2>
+    <p class="muted">Lade dein Logo hoch (PNG oder JPG). Es steht oben rechts auf der ersten Seite. Die Fußzeile wird aus deinen Stammdaten erzeugt oder du schreibst sie selbst (eine Zeile pro Zeile).</p>
     <div class="letterhead">
-      ${lh ? `<p>Aktuell: <b>${esc(lh.name)}</b> <button type="button" class="link danger" id="lhRemove">entfernen</button></p>` : '<p>Kein Briefkopf hinterlegt.</p>'}
-      <input type="file" id="lhFile" accept="application/pdf,image/png,image/jpeg">
+      ${logoF ? `<p>Logo: <b>${esc(logoF.name)}</b> <button type="button" class="link danger" id="logoRemove">entfernen</button></p>` : '<p>Kein Logo hinterlegt.</p>'}
+      <input type="file" id="logoFile" accept="image/png,image/jpeg">
     </div>
     <div class="grid">
-      ${field('Absenderzeile über der Anschrift', 'senderLine', c.senderLine, { full: true, hint: 'leer = automatisch aus den Stammdaten' })}
-      ${field('Anschriftfeld ab (mm von oben)', 'layout.addressTop', L.addressTop, { type: 'number' })}
-      ${field('Text beginnt auf Seite 1 ab (mm)', 'layout.contentTop', L.contentTop, { type: 'number' })}
-      ${field('Text beginnt auf Folgeseiten ab (mm)', 'layout.followTop', L.followTop, { type: 'number' })}
-      ${field('Rand unten frei lassen (mm)', 'layout.bottom', L.bottom, { type: 'number', hint: 'Platz für die Fußzeile deines Briefkopfs' })}
-      ${field('Rand links (mm)', 'layout.marginLeft', L.marginLeft, { type: 'number' })}
-      ${field('Rand rechts (mm)', 'layout.marginRight', L.marginRight, { type: 'number' })}
-      <label class="field check"><input type="checkbox" name="layout.letterheadAllPages" ${L.letterheadAllPages ? 'checked' : ''}><span>Briefkopf auf allen Seiten</span></label>
+      ${field('Logo links (mm)', 'layout2.logoX', L.logoX, { type: 'number' })}
+      ${field('Logo oben (mm)', 'layout2.logoY', L.logoY, { type: 'number' })}
+      ${field('Logo Breite (mm)', 'layout2.logoW', L.logoW, { type: 'number' })}
+      ${field('Logo Höhe (mm)', 'layout2.logoH', L.logoH, { type: 'number' })}
+      ${field('Zusatz in der Fußzeile', 'footerExtra', c.footerExtra, { hint: 'z. B. „Meisterbetrieb“' })}
+      ${field('Fußzeile (frei, optional)', 'footerText', c.footerText, { type: 'textarea', full: true, hint: 'leer = automatisch: Firma • Inhaber • Adresse / Bank • IBAN • BIC • USt-ID / Tel. • Mail • Web' })}
+    </div>
+    <h2>Briefbogen (Alternative zu Logo & Fußzeile)</h2>
+    <p class="muted">Hast du einen fertigen Briefbogen als PDF (Seite 2 = Folgeseite) oder Bild, kannst du ihn hier hinterlegen. Dann werden Logo und Fußzeile von oben nicht gedruckt.</p>
+    <div class="letterhead">
+      ${lh ? `<p>Aktuell: <b>${esc(lh.name)}</b> <button type="button" class="link danger" id="lhRemove">entfernen</button></p>` : '<p>Kein Briefbogen hinterlegt.</p>'}
+      <input type="file" id="lhFile" accept="application/pdf,image/png,image/jpeg">
+    </div>
+    <h2>Seitenaufbau</h2>
+    <div class="grid">
+      ${field('Absenderzeile über der Anschrift', 'senderLine', c.senderLine, { full: true, hint: 'leer = automatisch, z. B. „Firma • Straße • PLZ Ort“' })}
+      ${field('Absenderzeile ab (mm von oben)', 'layout2.addressTop', L.addressTop, { type: 'number' })}
+      ${field('Kundennr./Datum ab (mm)', 'layout2.infoTop', L.infoTop, { type: 'number' })}
+      ${field('Überschrift ab (mm)', 'layout2.contentTop', L.contentTop, { type: 'number' })}
+      ${field('Folgeseiten beginnen ab (mm)', 'layout2.followTop', L.followTop, { type: 'number' })}
+      ${field('Rand unten frei (mm)', 'layout2.bottom', L.bottom, { type: 'number' })}
+      ${field('Rand links (mm)', 'layout2.marginLeft', L.marginLeft, { type: 'number' })}
+      ${field('Rand rechts (mm)', 'layout2.marginRight', L.marginRight, { type: 'number' })}
+      <label class="field check"><input type="checkbox" name="layout2.foldMarks" ${L.foldMarks ? 'checked' : ''}><span>Falz- und Lochmarken</span></label>
+      <label class="field check"><input type="checkbox" name="layout2.letterheadAllPages" ${L.letterheadAllPages ? 'checked' : ''}><span>Briefbogen auf allen Seiten</span></label>
     </div>
     <h2>Nummern & Vorgaben</h2>
     <div class="grid">
-      ${field('Präfix Angebote', 'numbering.angebot.prefix', n.angebot?.prefix ?? KINDS.angebot.prefix, { hint: '{JAHR} wird ersetzt' })}
-      ${field('Präfix Aufträge', 'numbering.auftrag.prefix', n.auftrag?.prefix ?? KINDS.auftrag.prefix)}
-      ${field('Präfix Rechnungen', 'numbering.rechnung.prefix', n.rechnung?.prefix ?? KINDS.rechnung.prefix)}
-      ${field('Erste Rechnungsnummer', 'numbering.rechnung.start', n.rechnung?.start ?? 1, { type: 'number', hint: 'falls du bisherige Nummern fortführen willst' })}
+      ${field('Rechnungsnummer: Vorsatz', 'numbering.rechnung.prefix', pfx('rechnung'), { hint: '{JJ} = Jahr zweistellig (26), {JAHR} = 2026' })}
+      ${field('Rechnungsnummer: Stellen der lfd. Nr.', 'numbering.rechnung.digits', n.rechnung?.digits ?? KINDS.rechnung.digits, { type: 'number', hint: `nächste Rechnung: <b>${esc(isNew ? '' : nextNumber('rechnung', c))}</b>` })}
+      ${field('Nächste lfd. Rechnungsnr. in diesem Jahr', 'numbering.rechnung.start', n.rechnung?.startYear == new Date().getFullYear() ? n.rechnung?.start ?? '' : '', { type: 'number', hint: 'z. B. 9 → 2609, wenn du bisher bis 2608 geschrieben hast' })}
+      ${field('Angebotsnummer: Vorsatz', 'numbering.angebot.prefix', pfx('angebot'))}
+      ${field('Angebotsnummer: Stellen', 'numbering.angebot.digits', n.angebot?.digits ?? KINDS.angebot.digits, { type: 'number' })}
+      ${field('Auftragsnummer: Vorsatz', 'numbering.auftrag.prefix', pfx('auftrag'))}
+      ${field('Auftragsnummer: Stellen', 'numbering.auftrag.digits', n.auftrag?.digits ?? KINDS.auftrag.digits, { type: 'number' })}
       ${field('Präfix Kundennummer', 'customerPrefix', c.customerPrefix ?? 'K-')}
       ${field('Zahlungsziel (Tage)', 'paymentDays', c.paymentDays ?? 14, { type: 'number' })}
       ${field('Angebot gültig (Tage)', 'offerValidDays', c.offerValidDays ?? 30, { type: 'number' })}
@@ -646,20 +798,29 @@ async function viewCompany(id) {
       ${field('Hinweis auf Rechnungen an Privatkunden', 'privateNotice', c.privateNotice ?? 'Bei Leistungen an einem Grundstück: Sie sind gesetzlich verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b UStG).', { type: 'textarea', full: true })}
     </div>
     <div class="actions sticky"><button class="btn primary">Speichern</button>
-      <button type="button" class="btn" id="preview">Probe-PDF</button>
+      <button type="button" class="btn" id="preview">Probe-PDF (nur Layout, keine E-Rechnung)</button>
       ${isNew ? '' : '<button type="button" class="btn danger" id="del">Firma löschen</button>'}</div>
   </form>`, 'settings');
 
   const collect = () => {
     const data = formData($('#f'));
-    const out = { ...c, layout: { ...L }, numbering: structuredClone(c.numbering || {}), texts: { ...(c.texts || {}) } };
+    const out = { ...c, layout2: { ...L }, numbering: structuredClone(c.numbering || {}), texts: { ...(c.texts || {}) } };
     for (const [k, v] of Object.entries(data)) {
       const parts = k.split('.');
       let o = out;
       while (parts.length > 1) o = o[parts[0]] ||= {}, parts.shift();
       o[parts[0]] = v;
     }
-    for (const k of Object.keys(LAYOUT_DEFAULTS)) if (k !== 'letterheadAllPages') out.layout[k] = Number(out.layout[k]);
+    for (const [k, v] of Object.entries(LAYOUT_DEFAULTS)) if (typeof v === 'number') out.layout2[k] = Number(out.layout2[k]);
+    for (const k of Object.keys(KINDS)) {
+      const nk = (out.numbering[k] ||= {});
+      nk.digits = Number(nk.digits) || KINDS[k].digits;
+    }
+    const st = out.numbering.rechnung;
+    if (st.start) {
+      st.start = Number(st.start);
+      st.startYear = new Date().getFullYear();
+    }
     out.paymentDays = Number(out.paymentDays);
     out.offerValidDays = Number(out.offerValidDays);
     out.defaultVat = Number(out.defaultVat);
@@ -687,6 +848,20 @@ async function viewCompany(id) {
     toast('Briefkopf gespeichert');
     viewCompany(saved.id);
   };
+  $('#logoFile').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) return toast('Datei zu groß (max. 4 MB)', 'err');
+    const f = await db.putFile({ name: file.name, mime: file.type, data: file });
+    const saved = await db.put({ ...collect(), logoFileId: f.id });
+    if (!companyId) companyId = saved.id;
+    toast('Logo gespeichert');
+    viewCompany(saved.id);
+  };
+  $('#logoRemove') && ($('#logoRemove').onclick = async () => {
+    await db.put({ ...collect(), logoFileId: null });
+    viewCompany(c.id);
+  });
   $('#lhRemove') && ($('#lhRemove').onclick = async () => {
     await db.put({ ...collect(), letterheadFileId: null });
     viewCompany(c.id);
@@ -694,7 +869,7 @@ async function viewCompany(id) {
   $('#preview').onclick = async () => {
     const cc = collect();
     const demo = {
-      kind: 'rechnung', number: 'RE-MUSTER-0001', date: today(), serviceDate: today(), dueDate: addDays(today(), cc.paymentDays),
+      kind: 'rechnung', number: nextNumber('rechnung', { ...cc, id: c.id }), date: today(), serviceDate: today(), dueDate: addDays(today(), cc.paymentDays),
       subject: 'Musterrechnung zur Layoutprüfung', intro: cc.texts.rechnungIntro, outro: cc.texts.outro, paymentTerms: paymentText(cc, addDays(today(), cc.paymentDays)),
       items: [
         { title: 'Arbeitszeit Geselle', desc: 'Montagearbeiten vor Ort', qty: 4, unit: 'HUR', price: 58, vat: 19 },
@@ -807,6 +982,7 @@ async function route() {
     case 'beleg': return parts[1] === 'neu' ? viewDoc('neu', params, parts[2]) : viewDoc(parts[1], params);
     case 'firma': return viewCompany(parts[1]);
     case 'einstellungen': return viewSettings();
+    case 'vorlagen': return viewTemplates();
     default: return viewHome();
   }
 }

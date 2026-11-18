@@ -75,6 +75,7 @@ function party(p, { seller, profile }) {
 export function buildCII(doc, company, customer, profile = 'zugferd') {
   const t = calcTotals(doc, company);
   const cur = 'EUR';
+  const isPeriod = doc.serviceMode === 'period' && !!(doc.serviceFrom || doc.serviceTo);
   const notes = [];
   if (doc.subject) notes.push(doc.subject);
   if (company.smallBusiness) notes.push('Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.');
@@ -150,7 +151,7 @@ ${lines}
 ${orderRef}
 </ram:ApplicableHeaderTradeAgreement>
 <ram:ApplicableHeaderTradeDelivery>${
-    doc.serviceDate || doc.date
+    !isPeriod && (doc.serviceDate || doc.date)
       ? `<ram:ActualDeliverySupplyChainEvent><ram:OccurrenceDateTime>${d102(doc.serviceDate || doc.date)}</ram:OccurrenceDateTime></ram:ActualDeliverySupplyChainEvent>`
       : ''
   }</ram:ApplicableHeaderTradeDelivery>
@@ -159,6 +160,7 @@ ${orderRef}
 <ram:InvoiceCurrencyCode>${cur}</ram:InvoiceCurrencyCode>
 ${payment}
 ${taxes}
+${isPeriod ? `<ram:BillingSpecifiedPeriod>${doc.serviceFrom ? `<ram:StartDateTime>${d102(doc.serviceFrom)}</ram:StartDateTime>` : ''}${doc.serviceTo ? `<ram:EndDateTime>${d102(doc.serviceTo)}</ram:EndDateTime>` : ''}</ram:BillingSpecifiedPeriod>` : ''}
 ${terms}
 <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
 <ram:LineTotalAmount>${amt(t.net)}</ram:LineTotalAmount>

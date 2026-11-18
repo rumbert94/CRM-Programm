@@ -42,7 +42,7 @@ export const fmtDateTime = (ms) =>
 
 // Einheiten nach UN/ECE Recommendation 20 (Pflicht für E-Rechnung)
 export const UNITS = [
-  { code: 'H87', label: 'Stk' },
+  { code: 'H87', label: 'Stück' },
   { code: 'HUR', label: 'Std' },
   { code: 'MIN', label: 'Min' },
   { code: 'DAY', label: 'Tag' },
@@ -59,10 +59,44 @@ export const UNITS = [
 export const unitLabel = (code) => UNITS.find((u) => u.code === code)?.label || code || '';
 
 export const KINDS = {
-  angebot: { label: 'Angebot', plural: 'Angebote', prefix: 'AN-{JAHR}-' },
-  auftrag: { label: 'Auftrag', plural: 'Aufträge', prefix: 'AB-{JAHR}-', pdfTitle: 'Auftragsbestätigung' },
-  rechnung: { label: 'Rechnung', plural: 'Rechnungen', prefix: 'RE-{JAHR}-' },
+  angebot: { label: 'Angebot', plural: 'Angebote', prefix: 'A{JJ}', digits: 2, file: '' },
+  auftrag: { label: 'Auftrag', plural: 'Aufträge', prefix: 'AB{JJ}', digits: 2, pdfTitle: 'Auftragsbestätigung', file: '' },
+  rechnung: { label: 'Rechnung', plural: 'Rechnungen', prefix: '{JJ}', digits: 2, file: 'R' },
 };
+// Frühere Standardpräfixe (werden automatisch auf die neuen umgestellt)
+export const OLD_PREFIXES = ['AN-{JAHR}-', 'AB-{JAHR}-', 'RE-{JAHR}-'];
+
+export function numberPrefix(kind, c, date = new Date()) {
+  let cfg = c?.numbering?.[kind] || {};
+  if (!cfg.prefix || OLD_PREFIXES.includes(cfg.prefix)) cfg = { ...cfg, prefix: KINDS[kind].prefix, digits: cfg.digits ?? KINDS[kind].digits };
+  const y = String(date.getFullYear());
+  return { prefix: cfg.prefix.replace('{JAHR}', y).replace('{JJ}', y.slice(2)), digits: Number(cfg.digits ?? KINDS[kind].digits ?? 4) };
+}
+
+// Dateiname wie in Lexware: Rechnung 2609 -> R2609
+export const docFileName = (d) => {
+  const nr = d.number || 'Entwurf';
+  return (d.kind === 'rechnung' && /^\d/.test(nr) ? 'R' : '') + nr;
+};
+
+// Positionsnummern (mit Titeln: 1, 1.1, 1.2, 2, 2.1 …) und Titel-Zwischensummen
+export function numberItems(items = []) {
+  const hasTitles = items.some((i) => i.type === 'title');
+  let t = 0;
+  let p = 0;
+  const out = [];
+  for (const it of items) {
+    if (it.type === 'title') {
+      t++;
+      p = 0;
+      out.push({ item: it, pos: String(t), isTitle: true, title: t });
+    } else {
+      p++;
+      out.push({ item: it, pos: hasTitles ? (t ? `${t}.${p}` : String(p)) : String(p), title: t });
+    }
+  }
+  return out;
+}
 
 export const STATUS = {
   angebot: ['Entwurf', 'Versendet', 'Angenommen', 'Abgelehnt'],
@@ -72,7 +106,7 @@ export const STATUS = {
 
 // Summen nach EN 16931: Positionen auf Cent runden, Steuer je Satz auf die Summe
 export function calcTotals(doc, company) {
-  const lines = (doc.items || []).map((it) => {
+  const lines = (doc.items || []).filter((it) => it.type !== 'title').map((it) => {
     const qty = parseNum(it.qty);
     const price = parseNum(it.price);
     const vat = company?.smallBusiness || doc.taxMode === 'reverse' ? 0 : parseNum(it.vat);
@@ -113,11 +147,17 @@ export const safeFile = (s) => String(s || '').replace(/[^\w.\-äöüÄÖÜß ]+
 
 // Seitenränder/Positionen für PDF (mm)
 export const LAYOUT_DEFAULTS = {
-  marginLeft: 25,
-  marginRight: 20,
-  addressTop: 50, // mm von oben bis Absenderzeile (DIN 5008 Form B ca. 45–50)
-  contentTop: 100, // Beginn des Textes auf Seite 1
+  marginLeft: 20,
+  marginRight: 15,
+  addressTop: 50, // mm von oben bis Absenderzeile
+  infoTop: 75, // Kundennr./Datum rechts
+  contentTop: 100, // Überschrift auf Seite 1
   followTop: 25, // Beginn auf Folgeseiten
-  bottom: 30, // Freiraum unten (für Fußzeile im Briefkopf)
+  bottom: 30, // Freiraum unten (Fußzeile)
   letterheadAllPages: true,
+  foldMarks: true,
+  logoX: 135,
+  logoY: 20,
+  logoW: 50,
+  logoH: 25,
 };

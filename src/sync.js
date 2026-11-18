@@ -193,7 +193,7 @@ async function syncFiles() {
     if (r.ok) await db.saveFileRaw({ ...f, synced: true });
   }
   const have = new Set(files.map((f) => f.id));
-  const needed = db.all('company').map((c) => c.letterheadFileId).filter((id) => id && !have.has(id));
+  const needed = db.all('company').flatMap((c) => [c.letterheadFileId, c.logoFileId]).filter((id) => id && !have.has(id));
   for (const id of needed) {
     const meta = await graph(`:/dateien/${id}`);
     if (!meta.ok) continue;
