@@ -170,8 +170,9 @@ summary { cursor: pointer; font-weight: 600; }
 .flow span.cur { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
 
 /* Schaltflächen in Grün (ähnlich Spotify) */
-:root { --btn: #1db954; --btn-hover: #1ed760; --btn-text: #0b0b0b; }
+:root { --btn: #4ae17d; --btn-hover: #6fe898; --btn-text: #0b0b0b; }
 .btn, .btn.primary { background: var(--btn); border-color: var(--btn); color: var(--btn-text); font-weight: 600; }
 .btn:hover:not(:disabled), .btn.primary:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--btn-hover); }
 .btn.danger { background: var(--card); border-color: var(--line); color: var(--danger); font-weight: 400; }
 .btn.danger:hover:not(:disabled) { background: var(--card); border-color: var(--danger); }
+.actions .push-right { margin-left: auto; }

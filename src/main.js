@@ -862,7 +862,7 @@ async function viewCompany(id) {
     </div>
     <div class="actions sticky"><button class="btn primary">Speichern</button>
       <button type="button" class="btn" id="preview">Probe-PDF (nur Layout, keine E-Rechnung)</button>
-      ${isNew ? '' : '<button type="button" class="btn danger" id="del">Firma löschen</button>'}</div>
+      ${isNew ? '' : '<button type="button" class="btn danger push-right" id="del">Firma löschen</button>'}</div>
   </form>`, 'settings');
 
   const collect = () => {
@@ -953,7 +953,9 @@ async function viewCompany(id) {
   };
   $('#del') && ($('#del').onclick = async () => {
     if (db.all('doc', (d) => d.companyId === c.id).length) return toast('Firma hat Belege und kann nicht gelöscht werden.', 'err');
-    if (!confirm('Firma wirklich löschen?')) return;
+    if (!confirm(`Firma „${c.name}“ wirklich löschen?`)) return;
+    const typed = prompt(`Zur Sicherheit: Bitte tippe LÖSCHEN ein, um „${c.name}“ endgültig zu entfernen.`);
+    if ((typed || '').trim().toUpperCase() !== 'LÖSCHEN') return toast('Abgebrochen – Firma wurde nicht gelöscht.');
     await db.remove(c.id);
     companyId = db.all('company')[0]?.id || '';
     localStorage.setItem('companyId', companyId);
