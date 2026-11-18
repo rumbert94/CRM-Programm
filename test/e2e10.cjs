@@ -1,0 +1,22 @@
+const { chromium, devices } = require('playwright');
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  p.on('dialog', (d) => d.accept());
+  await p.goto('http://localhost:4173/'); await p.click('text=Firma anlegen');
+  await p.fill('[name=name]', 'Muster GmbH'); await p.fill('[name=street]', 'Werkweg 3'); await p.fill('[name=zip]', '16515'); await p.fill('[name=city]', 'Oranienburg');
+  await p.click('button:has-text("Speichern")'); await p.waitForURL(/einstellungen/);
+  await p.click('nav >> text=Rechnungen'); await p.waitForTimeout(600);
+  await p.screenshot({ path: 'test/shots/nav-desktop.png' });
+  const m = await b.newContext({ ...devices['Pixel 7'] }); const q = await m.newPage();
+  q.on('pageerror', (e) => errs.push(e.message));
+  await q.goto('http://localhost:4173/'); await q.click('text=Firma anlegen'); await q.fill('[name=name]', 'X'); await q.fill('[name=street]', 'a'); await q.fill('[name=zip]', '1'); await q.fill('[name=city]', 'b');
+  await q.click('button:has-text("Speichern")'); await q.waitForURL(/einstellungen/);
+  await q.screenshot({ path: 'test/shots/nav-mobile-closed.png' });
+  await q.click('#menuBtn'); await q.waitForTimeout(400);
+  await q.screenshot({ path: 'test/shots/nav-mobile-open.png' });
+  await q.click('nav >> text=Kunden'); await q.waitForTimeout(500);
+  console.log({ url: q.url(), open: await q.evaluate(() => document.body.classList.contains('nav-open')), errs });
+  await b.close();
+})();

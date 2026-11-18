@@ -121,17 +121,27 @@ function customerName(id) {
 function shell(content, active = '') {
   const companies = db.all('company').sort((a, b) => a.name.localeCompare(b.name));
   const s = sync.getState();
+  // Seitenleiste: Übersicht, Stammdaten (Kunden, Vorlagen), Verkauf (Angebote, Aufträge, Rechnungen), Einstellungen
   const nav = [
     ['#/', 'Übersicht', 'home'],
-    ['#/kunden', 'Kunden', 'kunden'],
-    ['#/belege/angebot', 'Angebote', 'angebot'],
-    ['#/belege/auftrag', 'Aufträge', 'auftrag'],
-    ['#/belege/rechnung', 'Rechnungen', 'rechnung'],
-    ['#/vorlagen', 'Vorlagen', 'vorlagen'],
+    ['Stammdaten', [
+      ['#/kunden', 'Kunden', 'kunden'],
+      ['#/vorlagen', 'Vorlagen', 'vorlagen'],
+    ]],
+    ['Verkauf', [
+      ['#/belege/angebot', 'Angebote', 'angebot'],
+      ['#/belege/auftrag', 'Aufträge', 'auftrag'],
+      ['#/belege/rechnung', 'Rechnungen', 'rechnung'],
+    ]],
     ['#/einstellungen', 'Einstellungen', 'settings'],
   ];
+  const link = ([h, l, k], sub = false) => `<a href="${h}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${l}</a>`;
+  const navHtml = nav
+    .map((n) => (Array.isArray(n[1]) ? `<div class="nav-group">${esc(n[0])}</div>${n[1].map((x) => link(x, true)).join('')}` : link(n)))
+    .join('');
   app.innerHTML = `
   <header class="top">
+    <button class="menu-btn" id="menuBtn" aria-label="Menü öffnen" aria-expanded="false">☰</button>
     <div class="brand">Handwerk&nbsp;CRM</div>
     <select id="companySel" aria-label="Firma wählen">
       ${companies.map((c) => `<option value="${c.id}" ${c.id === companyId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
@@ -140,8 +150,19 @@ function shell(content, active = '') {
     <button class="theme-btn" id="themeBtn" title="Hell / Dunkel umschalten" aria-label="Hell / Dunkel umschalten">${isDark() ? '☀' : '☾'}</button>
     <button class="sync ${esc(s.status)}" id="syncBtn" title="${esc(s.message)}">${syncIcon(s.status)}</button>
   </header>
-  <nav class="tabs">${nav.map(([h, l, k]) => `<a href="${h}" class="${active === k ? 'active' : ''}">${l}</a>`).join('')}</nav>
-  <main>${content}</main>`;
+  <div class="layout">
+    <nav class="side" id="sideNav">${navHtml}</nav>
+    <div class="nav-backdrop" id="navBackdrop"></div>
+    <main>${content}</main>
+  </div>`;
+  const setNav = (open) => {
+    document.body.classList.toggle('nav-open', open);
+    $('#menuBtn').setAttribute('aria-expanded', String(open));
+  };
+  setNav(false);
+  $('#menuBtn').onclick = () => setNav(!document.body.classList.contains('nav-open'));
+  $('#navBackdrop').onclick = () => setNav(false);
+  $('#sideNav').onclick = (e) => e.target.closest('a') && setNav(false);
   $('#companySel').onchange = (e) => {
     if (e.target.value === '__new') return go('#/firma/neu');
     companyId = e.target.value;
