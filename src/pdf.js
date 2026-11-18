@@ -143,8 +143,8 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
     if (lh) return;
     const lines = footerLines(company);
     if (!lines.length) return;
-    const fy = 16 * MM + (lines.length - 1) * 10;
-    hline(fy + 12, 0.5, left, right - 6 * MM);
+    const fy = (L.footerBottom ?? 7) * MM + (lines.length - 1) * 10;
+    hline(fy + 15, 0.5, left, right - 6 * MM);
     lines.forEach((l, i) => text(l, (left + right - 6 * MM) / 2, fy - i * 10, { size: 8, align: 'center' }));
   };
   const newPage = (first = false) => {

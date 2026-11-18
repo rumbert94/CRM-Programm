@@ -1145,6 +1145,7 @@ async function viewCompany(id) {
       ${field('Überschrift ab (mm)', 'layout2.contentTop', L.contentTop, { type: 'number' })}
       ${field('Folgeseiten beginnen ab (mm)', 'layout2.followTop', L.followTop, { type: 'number' })}
       ${field('Rand unten frei (mm)', 'layout2.bottom', L.bottom, { type: 'number' })}
+      ${field('Fußzeile Abstand unten (mm)', 'layout2.footerBottom', L.footerBottom ?? 7, { type: 'number', hint: 'kleiner = weiter nach unten' })}
       ${field('Rand links (mm)', 'layout2.marginLeft', L.marginLeft, { type: 'number' })}
       ${field('Rand rechts (mm)', 'layout2.marginRight', L.marginRight, { type: 'number' })}
       <label class="field check"><input type="checkbox" name="layout2.foldMarks" ${L.foldMarks ? 'checked' : ''}><span>Falz- und Lochmarken</span></label>

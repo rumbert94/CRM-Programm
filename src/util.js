@@ -154,7 +154,7 @@ export const LAYOUT_DEFAULTS = {
   infoTop: 75, // Kundennr./Datum rechts
   contentTop: 100, // Überschrift auf Seite 1
   followTop: 25, // Beginn auf Folgeseiten
-  bottom: 30, // Freiraum unten (Fußzeile)
+  bottom: 30, footerBottom: 7, // Freiraum unten (Fußzeile)
   letterheadAllPages: true,
   foldMarks: true,
   logoX: 135,
