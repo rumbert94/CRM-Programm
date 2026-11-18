@@ -118,9 +118,44 @@ function customerName(id) {
 }
 
 // ---------- Rahmen ----------
+const ICON_PATHS = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  kunden: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.8.8 3 2.6 3.5 5.2"/>',
+  vorlagen: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  angebot: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M8.5 13h7M8.5 17h5"/>',
+  auftrag: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 13l2 2 4-4"/>',
+  rechnung: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+};
+const icon = (k, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[k] || ''}</svg>`;
+const initials = (name) =>
+  String(name || '')
+    .replace(/[^\p{L}\p{N} ]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('') || '–';
+const avatar = (name) => `<span class="avatar">${esc(initials(name))}</span>`;
+// Seitenkopf: Titel, Firma darunter, Aktionen rechts
+const pageHead = (title, actions = '', sub = company()?.name || '') =>
+  `<div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p class="sub">${esc(sub)}</p>` : ''}</div>${actions ? `<div class="head-actions">${actions}</div>` : ''}</div>`;
+const searchBox = (id, value, placeholder) => `<label class="searchbox">${icon('search')}<input id="${id}" type="search" placeholder="${esc(placeholder)}" value="${esc(value)}"></label>`;
+
 function shell(content, active = '') {
   const companies = db.all('company').sort((a, b) => a.name.localeCompare(b.name));
+  const cur = company();
   const s = sync.getState();
+  const docs = companyId ? db.all('doc', (d) => d.companyId === companyId) : [];
+  const cnt = {
+    kunden: companyId ? db.all('customer', (k) => k.companyId === companyId).length : 0,
+    angebot: docs.filter((d) => d.kind === 'angebot' && ['Entwurf', 'Versendet'].includes(d.status)).length,
+    auftrag: docs.filter((d) => d.kind === 'auftrag' && d.status !== 'Erledigt').length,
+    rechnung: docs.filter((d) => d.kind === 'rechnung' && d.status === 'Versendet').length,
+  };
+  const overdue = docs.some((d) => d.kind === 'rechnung' && d.status === 'Versendet' && d.dueDate && d.dueDate < today());
   // Seitenleiste: Übersicht, Stammdaten (Kunden, Vorlagen), Verkauf (Angebote, Aufträge, Rechnungen), Einstellungen
   const nav = [
     ['#/', 'Übersicht', 'home'],
@@ -135,23 +170,39 @@ function shell(content, active = '') {
     ]],
     ['#/einstellungen', 'Einstellungen', 'settings'],
   ];
-  const link = ([h, l, k], sub = false) => `<a href="${h}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${l}</a>`;
+  const badge = (k) => {
+    if (!cnt[k]) return '';
+    const cls = k === 'kunden' ? 'plain' : k === 'rechnung' && overdue ? 'alert' : '';
+    return `<span class="count ${cls}">${cnt[k]}</span>`;
+  };
+  const link = ([h, l, k], sub = false) => `<a href="${h}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${icon(k)}<span class="lbl">${l}</span>${badge(k)}</a>`;
   const navHtml = nav
     .map((n) => (Array.isArray(n[1]) ? `<div class="nav-group">${esc(n[0])}</div>${n[1].map((x) => link(x, true)).join('')}` : link(n)))
     .join('');
   app.innerHTML = `
   <header class="top">
     <button class="menu-btn" id="menuBtn" aria-label="Menü öffnen" aria-expanded="false">☰</button>
-    <div class="brand">Handwerk&nbsp;CRM</div>
-    <select id="companySel" aria-label="Firma wählen">
-      ${companies.map((c) => `<option value="${c.id}" ${c.id === companyId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
-      <option value="__new">+ Neue Firma …</option>
-    </select>
-    <button class="theme-btn" id="themeBtn" title="Hell / Dunkel umschalten" aria-label="Hell / Dunkel umschalten">${isDark() ? '☀' : '☾'}</button>
-    <button class="sync ${esc(s.status)}" id="syncBtn" title="${esc(s.message)}">${syncIcon(s.status)}</button>
+    <div class="brand">${esc(cur?.name || 'Handwerk CRM')}</div>
+    <button class="sync ${esc(s.status)}" title="${esc(s.message)}">${syncIcon(s.status)}</button>
   </header>
   <div class="layout">
-    <nav class="side" id="sideNav">${navHtml}</nav>
+    <nav class="side" id="sideNav">
+      <div class="side-company">
+        ${avatar(cur?.name || 'Handwerk CRM')}
+        <div class="side-company-txt">
+          <select id="companySel" aria-label="Firma wählen">
+            ${companies.map((c) => `<option value="${c.id}" ${c.id === companyId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+            <option value="__new">+ Neue Firma …</option>
+          </select>
+          <small>${esc(cur?.city || 'Handwerk CRM')}</small>
+        </div>
+      </div>
+      ${navHtml}
+      <div class="side-foot">
+        <button class="theme-btn" id="themeBtn" title="Hell / Dunkel umschalten" aria-label="Hell / Dunkel umschalten">${isDark() ? '☀' : '☾'}</button>
+        <button class="sync ${esc(s.status)}" id="syncBtn" title="${esc(s.message)}">${syncIcon(s.status)}</button>
+      </div>
+    </nav>
     <div class="nav-backdrop" id="navBackdrop"></div>
     <main>${content}</main>
   </div>`;
@@ -173,7 +224,7 @@ function shell(content, active = '') {
     setTheme(isDark() ? 'light' : 'dark');
     e.currentTarget.textContent = isDark() ? '☀' : '☾';
   };
-  $('#syncBtn').onclick = () => (sync.isConnected() ? sync.sync() : go('#/einstellungen'));
+  $$('.sync').forEach((b) => (b.onclick = () => (sync.isConnected() ? sync.sync() : go('#/einstellungen'))));
 }
 
 function syncIcon(status) {
@@ -192,7 +243,7 @@ function viewHome() {
   const sum = (arr) => arr.reduce((s, d) => s + calcTotals(d, c).gross, 0);
   const recent = docs.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
   shell(`
-  <h1>${esc(c.name)}</h1>
+  ${pageHead('Übersicht', '<a class="btn primary" href="#/beleg/neu/rechnung">+ Rechnung</a>')}
   <div class="cards">
     <a class="stat" href="#/belege/rechnung?f=offen"><b>${eur(sum(offen))}</b><span>${offen.length} offene Rechnungen</span></a>
     <a class="stat ${ueberfaellig.length ? 'warn' : ''}" href="#/belege/rechnung?f=ueberfaellig"><b>${ueberfaellig.length}</b><span>überfällig</span></a>
@@ -200,27 +251,48 @@ function viewHome() {
     <a class="stat" href="#/belege/auftrag"><b>${auftraege.length}</b><span>laufende Aufträge</span></a>
   </div>
   <div class="actions">
-    <a class="btn primary" href="#/kunde/neu">+ Kunde</a>
+    <a class="btn" href="#/kunde/neu">+ Kunde</a>
     <a class="btn" href="#/beleg/neu/angebot">+ Angebot</a>
     <a class="btn" href="#/beleg/neu/auftrag">+ Auftrag</a>
-    <a class="btn" href="#/beleg/neu/rechnung">+ Rechnung</a>
   </div>
   <h2>Zuletzt bearbeitet</h2>
   ${docList(recent)}`, 'home');
 }
 
-function docList(docs) {
-  if (!docs.length) return '<p class="empty">Noch keine Belege.</p>';
+const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+function docRow(d, c) {
+  const overdue = d.kind === 'rechnung' && d.status === 'Versendet' && d.dueDate && d.dueDate < today();
+  const cust = d.customerSnapshot?.name || customerName(d.customerId);
+  return `<li><a class="row" href="#/beleg/${d.id}">
+    <span class="row-ic">${icon(d.kind)}</span>
+    ${avatar(cust === '–' ? '' : cust)}
+    <div class="row-main"><b>${esc(cust === '–' ? 'Ohne Kunde' : cust)}</b>
+      <small>${esc(shortTitle(d))} ${esc(d.number || '(Entwurf)')}${d.subject ? ' · ' + esc(d.subject.split('\n')[0]) : ''}</small></div>
+    <span class="badge ${overdue ? 'warn' : esc(d.status)}">${overdue ? 'überfällig' : esc(d.status)}</span>
+    <b class="amount">${eur(calcTotals(d, c).gross)}</b>${icon('chevron', 'chev')}
+  </a></li>`;
+}
+// Belegliste, optional nach Monaten gruppiert (wie Karten mit Kopfzeile)
+function docList(docs, { group = false } = {}) {
+  if (!docs.length) return '<p class="empty">Keine Belege gefunden.</p>';
   const c = company();
-  return `<ul class="list">${docs
-    .map((d) => {
-      const overdue = d.kind === 'rechnung' && d.status === 'Versendet' && d.dueDate && d.dueDate < today();
-      return `<li><a href="#/beleg/${d.id}">
-      <div><b>${esc(d.number || 'Entwurf')}</b> · ${esc(shortTitle(d))}${d.isCreditNote ? ' (Storno)' : ''}<br><small>${esc(customerName(d.customerId))} · ${esc(d.subject || '')}</small></div>
-      <div class="right"><b>${eur(calcTotals(d, c).gross)}</b><br><span class="badge ${overdue ? 'warn' : esc(d.status)}">${overdue ? 'überfällig' : esc(d.status)}</span></div>
-    </a></li>`;
+  if (!group) return `<ul class="list">${docs.map((d) => docRow(d, c)).join('')}</ul>`;
+  const groups = new Map();
+  for (const d of docs) {
+    const key = (d.date || '').slice(0, 7) || 'ohne';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  }
+  return [...groups]
+    .map(([key, arr]) => {
+      const [y, m] = key.split('-');
+      const sum = arr.reduce((s, d) => s + calcTotals(d, c).gross, 0);
+      return `<section class="group">
+      <div class="group-head"><div class="gh-date">${key === 'ohne' ? '–' : `<b>${MONTHS[Number(m) - 1]}</b><small>${y}</small>`}</div>
+        <div class="gh-pills"><span class="pill">${arr.length} ${arr.length === 1 ? 'Beleg' : 'Belege'}</span><span class="pill"><b>${eur(sum)}</b></span></div></div>
+      <ul class="list flat">${arr.map((d) => docRow(d, c)).join('')}</ul></section>`;
     })
-    .join('')}</ul>`;
+    .join('');
 }
 
 // ---------- Kunden ----------
@@ -231,9 +303,9 @@ function viewCustomers() {
     .filter((k) => !q || [k.name, k.contact, k.city, k.number, k.email, k.phone].join(' ').toLowerCase().includes(q))
     .sort((a, b) => a.name.localeCompare(b.name));
   shell(`
-  <div class="bar"><h1>Kunden</h1><a class="btn primary" href="#/kunde/neu">+ Neuer Kunde</a></div>
-  <input class="search" id="q" placeholder="Suchen (Name, Ort, Telefon …)" value="${esc(q)}">
-  ${list.length ? `<ul class="list">${list.map((k) => `<li><a href="#/kunde/${k.id}"><div><b>${esc(k.name)}</b><br><small>${esc([k.number, k.zip + ' ' + k.city].filter((x) => x?.trim()).join(' · '))}</small></div><div class="right"><small>${esc(k.phone || '')}</small></div></a></li>`).join('')}</ul>` : '<p class="empty">Keine Kunden gefunden.</p>'}
+  ${pageHead('Kunden', '<a class="btn primary" href="#/kunde/neu">+ Neuer Kunde</a>')}
+  <div class="toolbar"><span></span>${searchBox('q', q, 'Name, Ort, Telefon …')}</div>
+  ${list.length ? `<ul class="list">${list.map((k) => `<li><a class="row" href="#/kunde/${k.id}">${avatar(k.name)}<div class="row-main"><b>${esc(k.name)}</b><small>${esc([k.number, `${k.zip || ''} ${k.city || ''}`].filter((x) => x?.trim()).join(' · '))}</small></div><small class="muted">${esc(k.phone || k.mobile || '')}</small>${icon('chevron', 'chev')}</a></li>`).join('')}</ul>` : '<p class="empty">Keine Kunden gefunden.</p>'}
   `, 'kunden');
   const qi = $('#q');
   qi.oninput = debounce(() => {
@@ -314,18 +386,29 @@ function viewCustomer(id) {
 // ---------- Belege ----------
 function viewDocs(kind, params) {
   const c = company();
-  const f = params.get('f');
+  const f = params.get('f') || '';
   const q = (sessionStorage.getItem('docQ' + kind) || '').toLowerCase();
-  let list = db.all('doc', (d) => d.companyId === companyId && d.kind === kind);
-  if (f === 'offen') list = list.filter((d) => d.status === 'Versendet');
-  if (f === 'ueberfaellig') list = list.filter((d) => d.status === 'Versendet' && d.dueDate && d.dueDate < today());
+  const all = db.all('doc', (d) => d.companyId === companyId && d.kind === kind);
+  const isOverdue = (d) => d.status === 'Versendet' && d.dueDate && d.dueDate < today();
+  const chips = {
+    angebot: [['', 'Alle'], ['entwurf', 'Entwürfe', (d) => d.status === 'Entwurf'], ['offen', 'Offen', (d) => d.status === 'Versendet'], ['angenommen', 'Angenommen', (d) => d.status === 'Angenommen'], ['abgelehnt', 'Abgelehnt', (d) => d.status === 'Abgelehnt']],
+    auftrag: [['', 'Alle'], ['offen', 'Offen', (d) => d.status === 'Offen'], ['inarbeit', 'In Arbeit', (d) => d.status === 'In Arbeit'], ['erledigt', 'Erledigt', (d) => d.status === 'Erledigt']],
+    rechnung: [['', 'Alle'], ['entwurf', 'Entwürfe', (d) => d.status === 'Entwurf'], ['offen', 'Offen', (d) => d.status === 'Versendet'], ['ueberfaellig', 'Überfällig', isOverdue], ['bezahlt', 'Bezahlt', (d) => d.status === 'Bezahlt'], ['storniert', 'Storniert', (d) => d.status === 'Storniert' || d.isStorno]],
+  }[kind];
+  const pred = chips.find((x) => x[0] === f)?.[2];
+  let list = pred ? all.filter(pred) : all;
+  const chipHtml = `<div class="segs">${chips
+    .map(([k, l, p]) => {
+      const n = p ? all.filter(p).length : 0;
+      return `<a class="seg ${k === f ? 'on' : ''}" href="#/belege/${kind}${k ? '?f=' + k : ''}">${l}${n && k !== 'bezahlt' && k !== 'erledigt' && k !== 'angenommen' ? ` <span class="count ${k === 'ueberfaellig' ? 'alert' : ''}">${n}</span>` : ''}</a>`;
+    })
+    .join('')}</div>`;
   if (q) list = list.filter((d) => [d.number, d.subject, customerName(d.customerId), d.status].join(' ').toLowerCase().includes(q));
   list.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.number || '').localeCompare(a.number || ''));
   shell(`
-  <div class="bar"><h1>${KINDS[kind].plural}</h1><a class="btn primary" href="#/beleg/neu/${kind}">+ ${KINDS[kind].label}</a></div>
-  <input class="search" id="q" placeholder="Suchen (Nummer, Kunde, Betreff …)" value="${esc(q)}">
-  ${f ? `<p><a href="#/belege/${kind}">Filter entfernen</a></p>` : ''}
-  ${docList(list)}
+  ${pageHead(KINDS[kind].plural, `<a class="btn primary" href="#/beleg/neu/${kind}">+ ${KINDS[kind].label}</a>`)}
+  <div class="toolbar">${chipHtml}${searchBox('q', q, 'Kunde, Nummer, Betreff …')}</div>
+  ${docList(list, { group: true })}
   <p class="sum">Summe: <b>${eur(list.reduce((s, d) => s + calcTotals(d, c).gross, 0))}</b></p>`, kind);
   const qi = $('#q');
   qi.oninput = debounce(() => {
@@ -835,19 +918,21 @@ async function viewDoc(id, params, kindForNew) {
   const pvVisible = () => layoutEl.classList.contains('pv-on') || layoutEl.classList.contains('pv-mobile');
   let pvBusy = false;
   let pvAgain = false;
+  const setPvState = (t) => { const el = $('#pvState'); if (el) el.textContent = t; };
   const refreshPreview = async () => {
     if (!pvVisible() || !document.body.contains(layoutEl)) return;
     if (pvBusy) return void (pvAgain = true);
     pvBusy = true;
-    $('#pvState').textContent = 'aktualisiere …';
+    setPvState('aktualisiere …');
     try {
       const bytes = await buildPdf(d, d.locked ? companyForDoc() : c, customer() || {});
       const { renderPreview } = await import('./preview.js');
+      if (!$('#pvBody')) return;
       await renderPreview($('#pvBody'), bytes);
-      $('#pvState').textContent = 'Stand ' + new Date().toLocaleTimeString('de-DE');
+      setPvState('Stand ' + new Date().toLocaleTimeString('de-DE'));
     } catch (e) {
       console.error(e);
-      $('#pvState').textContent = 'Fehler: ' + e.message;
+      setPvState('Fehler: ' + e.message);
     } finally {
       pvBusy = false;
       if (pvAgain) {
@@ -1058,7 +1143,7 @@ function viewTemplates() {
   const editId = sessionStorage.getItem('tplEdit');
   const ed = editId === 'neu' ? { type: 'article', companyId, unit: 'H87', vat: company().defaultVat ?? 19 } : editId ? db.get(editId) : null;
   shell(`
-  <div class="bar"><h1>Positionsvorlagen</h1><button class="btn primary" id="newTpl">+ Neue Vorlage</button></div>
+  ${pageHead('Positionsvorlagen', '<button class="btn primary" id="newTpl">+ Neue Vorlage</button>')}
   <p class="muted">Häufige Leistungen hier ablegen oder im Beleg bei einer Position auf „☆ Vorlage“ tippen. Im Beleg fügst du sie mit „+ Aus Vorlagen“ ein.</p>
   ${ed ? `<form id="tf" class="grid card">
     ${field('Kurztext (fett)', 'title', ed.title, { full: true })}
@@ -1068,8 +1153,8 @@ function viewTemplates() {
     ${select('USt', 'vat', ed.vat ?? company().defaultVat ?? 19, vatRates(company(), ed.vat).map((v) => ({ value: v, label: fmtNum(v) + ' %' })))}
     <div class="actions full"><button class="btn primary">Speichern</button><button type="button" class="btn" id="tplCancel">Abbrechen</button>${ed.id ? '<button type="button" class="btn danger" id="tplDel">Löschen</button>' : ''}</div>
   </form>` : ''}
-  <input class="search" id="q" placeholder="Vorlagen suchen …" value="${esc(q)}">
-  ${list.length ? `<ul class="list">${list.map((a) => `<li><a href="javascript:void 0" data-edit="${a.id}"><div><b>${esc(tplLabel(a))}</b><br><small>${esc((a.title ? a.desc : '') || '').slice(0, 140)}</small></div><div class="right">${eur(a.price)}<br><small>je ${esc(unitLabel(a.unit))}</small></div></a></li>`).join('')}</ul>` : '<p class="empty">Noch keine Vorlagen.</p>'}
+  <div class="toolbar"><span></span>${searchBox('q', q, 'Vorlagen suchen …')}</div>
+  ${list.length ? `<ul class="list">${list.map((a) => `<li><a class="row" href="javascript:void 0" data-edit="${a.id}"><span class="row-ic">${icon('vorlagen')}</span><div class="row-main"><b>${esc(tplLabel(a))}</b><small>${esc((a.title ? a.desc : '') || '').slice(0, 140)}</small></div><div class="right"><b class="amount">${eur(a.price)}</b><br><small class="muted">je ${esc(unitLabel(a.unit))}</small></div>${icon('chevron', 'chev')}</a></li>`).join('')}</ul>` : '<p class="empty">Noch keine Vorlagen.</p>'}
   `, 'vorlagen');
   const reopen = (id) => {
     if (id) sessionStorage.setItem('tplEdit', id);
@@ -1498,12 +1583,11 @@ db.onChange((info) => {
   else if (!/beleg\/|kunde\/|firma\//.test(location.hash) || !document.activeElement || document.activeElement === document.body) route();
 });
 sync.onStatus((s) => {
-  const b = $('#syncBtn');
-  if (b) {
+  $$('.sync').forEach((b) => {
     b.className = 'sync ' + s.status;
     b.title = s.message;
     b.textContent = syncIcon(s.status);
-  }
+  });
 });
 window.addEventListener('online', () => sync.sync());
 window.addEventListener('hashchange', route);
