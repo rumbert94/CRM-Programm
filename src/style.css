@@ -351,3 +351,38 @@ input, select, textarea { border-radius: 10px; }
 h2.sec { margin: 0 0 0.7rem; }
 @media (max-width: 1000px) { .cards.stats4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .tile { flex-direction: column; gap: 0.4rem; min-height: 92px; font-size: 1rem; text-align: center; } .tiles, .cards.stats4 { gap: 0.7rem; } .stats4 .stat b { font-size: 1.15rem; } }
+
+/* Regiebericht */
+.tile-wide { width: 100%; margin-bottom: 1rem; min-height: 84px; background: var(--navy); color: var(--card); }
+.tile-wide:hover { background: color-mix(in srgb, var(--navy) 88%, var(--card)); }
+.rcard { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.9rem 1rem; margin-bottom: 0.9rem; }
+.rcard h3 { margin: 0 0 0.7rem; font-size: 1rem; }
+.rcard .switch-row h3 { margin: 0; }
+.grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.chips-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.chips-row .chip span { padding: 0.55rem 1rem; }
+.wrow, .irow { display: grid; gap: 0.5rem; align-items: start; margin-bottom: 0.5rem; }
+.wrow { grid-template-columns: minmax(0, 1fr) 120px 32px; margin-top: 0.7rem; }
+.irow { grid-template-columns: 80px 110px minmax(0, 1fr) 32px; }
+.w-h { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+.w-del, .i-del { min-height: 44px; }
+.sig-done { display: flex; align-items: center; gap: 1rem; border: 1px solid var(--line); border-radius: 12px; padding: 0.5rem 0.8rem; margin-bottom: 0.6rem; background: #fff; color: #1d2330; }
+.sig-done img { height: 64px; max-width: 55%; object-fit: contain; }
+.sig-done small { display: block; color: #6b7280; }
+.btn.big { min-height: 56px; font-size: 1.05rem; }
+.sign-ov { align-items: stretch !important; }
+.sign-sheet { max-width: 900px; max-height: none; height: 100%; border-radius: 0 !important; display: flex; flex-direction: column; gap: 0.6rem; background: var(--card); }
+.sign-sum { font-size: 0.95rem; }
+.sign-legal { font-size: 0.8rem; color: var(--muted); max-height: 22vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem 0.7rem; }
+.sign-wrap { position: relative; flex: 1; min-height: 200px; border: 2px dashed var(--line); border-radius: 14px; background: #fff; }
+.sign-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; border-radius: 14px; }
+.sign-hint { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); color: #9aa3af; pointer-events: none; white-space: nowrap; border-top: 1px solid #c4c9d2; padding-top: 0.3rem; }
+.badge.Unterschrieben { background: color-mix(in srgb, var(--primary) 18%, transparent); color: var(--primary); }
+.badge.Abgerechnet { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+@media (max-width: 600px) {
+  .grid.three { grid-template-columns: 1fr 1fr; }
+  .irow { grid-template-columns: 70px 1fr 32px; }
+  .irow .i-desc { grid-column: 1 / 3; }
+  .irow .i-del { grid-row: 1; grid-column: 3; }
+  .wrow { grid-template-columns: minmax(0, 1fr) 100px 32px; }
+}

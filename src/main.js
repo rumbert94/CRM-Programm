@@ -3,6 +3,7 @@ import * as db from './db.js';
 import * as sync from './sync.js';
 const buildPdf = async (...a) => (await import('./pdf.js')).buildPdf(...a);
 import { buildCII, checkEInvoice } from './einvoice.js';
+import { initReports, REGIE_LEGAL_DEFAULT, TRAVEL } from './report.js';
 import {
   LAYOUT_DEFAULTS, OLD_PREFIXES, docTitle, shortTitle, round2, unitLabel, numberPrefix, docFileName, numberItems, esc, uid, eur, fmtDate, fmtDateTime, today, addDays, calcTotals, parseNum, UNITS, KINDS, STATUS, debounce, download, safeFile, fmtNum,
 } from './util.js';
@@ -127,6 +128,7 @@ const ICON_PATHS = {
   rechnung: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   chevron: '<path d="m9 6 6 6-6 6"/>',
+  bericht: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
 };
 const icon = (k, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[k] || ''}</svg>`;
@@ -166,6 +168,7 @@ function shell(content, active = '') {
     ['Verkauf', [
       ['#/belege/angebot', 'Angebote', 'angebot'],
       ['#/belege/auftrag', 'Aufträge', 'auftrag'],
+      ['#/berichte', 'Regieberichte', 'bericht'],
       ['#/belege/rechnung', 'Rechnungen', 'rechnung'],
     ]],
     ['#/einstellungen', 'Einstellungen', 'settings'],
@@ -244,6 +247,7 @@ function viewHome() {
   const recent = docs.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
   shell(`
   ${pageHead('Übersicht')}
+  <a class="tile tile-wide" href="#/bericht/neu">${icon('bericht')}<span>Regiebericht – unterwegs beim Kunden</span></a>
   <div class="tiles">
     <a class="tile" href="#/kunde/neu">${icon('kunden')}<span>+ Neuer Kunde</span></a>
     <a class="tile" href="#/beleg/neu/angebot">${icon('angebot')}<span>+ Neues Angebot</span></a>
@@ -1282,6 +1286,12 @@ async function viewCompany(id) {
       ${field('Umsatzsteuersätze in %', 'vatRates', c.vatRates ?? '19; 7; 0', { hint: 'mit Semikolon getrennt, z. B. „19; 7; 0“. Bei einer Steueränderung hier anpassen und Standard-USt. neu wählen. Alte Belege behalten ihren Satz.' })}
       ${select('Standard-USt.', 'defaultVat', c.defaultVat ?? 19, vatRates(c, c.defaultVat).map((v) => ({ value: v, label: fmtNum(v) + ' %' })))}
     </div>
+    <h2>Regiebericht</h2>
+    <div class="grid">
+      ${field('Stundensatz Monteur (netto €)', 'regie.rate', c.regie?.rate ?? '', { attrs: 'inputmode="decimal"', hint: 'wird beim Umwandeln in eine Rechnung eingesetzt' })}
+      ${TRAVEL.filter((t) => t.km).map((t) => field(`Fahrtkosten bis ${t.km} km (netto €)`, 'regie.travel' + t.km, c.regie?.['travel' + t.km] ?? t.def, { attrs: 'inputmode="decimal"' })).join('')}
+      ${field('Hinweise und Bestätigung über der Unterschrift', 'regie.legalText', c.regie?.legalText ?? REGIE_LEGAL_DEFAULT, { type: 'textarea', full: true })}
+    </div>
     <h2>Standardtexte</h2>
     <p class="muted">Mit dem Schalter legst du fest, ob ein Text automatisch in neue Belege übernommen wird.</p>
     <div class="grid">
@@ -1549,6 +1559,16 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => pendingSave && pendingSave());
 
+// Regieberichte (eigene Datei, bekommt die gemeinsamen Bausteine übergeben)
+let reportsApi;
+const reports = () =>
+  (reportsApi ||= initReports({
+    $, $$, shell, field, select, go, toast, company, pickTemplate, newDoc, icon, avatar, pageHead, searchBox, debounce, offerArchive,
+    getCompanyId: () => companyId,
+    setPending: (fn) => (pendingSave = fn),
+    newCustomer: () => ({ id: uid(), type: 'customer', companyId, number: nextCustomerNumber(company()), country: 'DE' }),
+  }));
+
 async function route() {
   await flushSave();
   schedulePreview = () => {};
@@ -1574,6 +1594,8 @@ async function route() {
     case 'firma': return viewCompany(parts[1]);
     case 'einstellungen': return viewSettings();
     case 'vorlagen': return viewTemplates();
+    case 'berichte': return reports().viewReports(params);
+    case 'bericht': return reports().viewReport(parts[1] || 'neu');
     default: return viewHome();
   }
 }
@@ -1581,7 +1603,7 @@ async function route() {
 // Änderungen von anderen Geräten: Listen neu zeichnen, Editoren in Ruhe lassen
 db.onChange((info) => {
   if (!info.fromSync) sync.scheduleSync();
-  else if (!/beleg\/|kunde\/|firma\//.test(location.hash) || !document.activeElement || document.activeElement === document.body) route();
+  else if (!/beleg\/|kunde\/|firma\/|bericht\//.test(location.hash) || !document.activeElement || document.activeElement === document.body) route();
 });
 sync.onStatus((s) => {
   $$('.sync').forEach((b) => {

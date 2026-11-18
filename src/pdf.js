@@ -27,6 +27,7 @@ async function assets() {
 }
 
 export { LAYOUT_DEFAULTS };
+export { assets, wrap, loadImage, loadLetterhead, drawLetterhead };
 
 function wrap(text, font, size, maxW) {
   const out = [];
