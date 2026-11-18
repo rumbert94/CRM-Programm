@@ -64,20 +64,23 @@ export const KINDS = {
   rechnung: { label: 'Rechnung', plural: 'Rechnungen', prefix: '{JJ}', digits: 2, file: 'R' },
 };
 // Frühere Standardpräfixe (werden automatisch auf die neuen umgestellt)
+// Eigener Nummernkreis für Stornorechnungen (Dateiname S2601)
+export const STORNO = { label: 'Stornorechnung', prefix: '{JJ}', digits: 2, file: 'S' };
 export const OLD_PREFIXES = ['AN-{JAHR}-', 'AB-{JAHR}-', 'RE-{JAHR}-', 'A{JJ}', 'AB{JJ}'];
 
 export function numberPrefix(kind, c, date = new Date()) {
   let cfg = c?.numbering?.[kind] || {};
-  if (!cfg.prefix || OLD_PREFIXES.includes(cfg.prefix)) cfg = { ...cfg, prefix: KINDS[kind].prefix, digits: cfg.digits ?? KINDS[kind].digits };
+  const def = KINDS[kind] || STORNO;
+  if (!cfg.prefix || OLD_PREFIXES.includes(cfg.prefix)) cfg = { ...cfg, prefix: def.prefix, digits: cfg.digits ?? def.digits };
   const y = String(date.getFullYear());
-  return { prefix: cfg.prefix.replace('{JAHR}', y).replace('{JJ}', y.slice(2)), digits: Number(cfg.digits ?? KINDS[kind].digits ?? 4) };
+  return { prefix: cfg.prefix.replace('{JAHR}', y).replace('{JJ}', y.slice(2)), digits: Number(cfg.digits ?? def.digits ?? 4) };
 }
 
 // Dateiname wie in Lexware: Rechnung 2609 -> R2609
 // Dateiname: Rechnung 2609 -> R2609, Angebot 2601 -> AN2601, Auftrag 2601 -> AB2601
 export const docFileName = (d) => {
-  if (!d.number) return `${KINDS[d.kind].label}-Entwurf`;
-  return KINDS[d.kind].file + d.number.replace(/^[A-Za-z]+-?/, '');
+  if (!d.number) return `${d.isStorno ? 'Storno' : KINDS[d.kind].label}-Entwurf`;
+  return (d.isStorno ? STORNO.file : KINDS[d.kind].file) + d.number.replace(/^[A-Za-z]+-?/, '');
 };
 
 // Positionsnummern (mit Titeln: 1, 1.1, 1.2, 2, 2.1 …) und Titel-Zwischensummen
@@ -166,8 +169,9 @@ export const LAYOUT_DEFAULTS = {
 // Belegtitel inkl. Abschlags-/Schlussrechnung
 export function docTitle(d) {
   if (d.isCreditNote) return 'Gutschrift';
+  if (d.isStorno) return STORNO.label;
   if (d.kind === 'rechnung' && d.invoiceType === 'abschlag') return `${d.abschlagNo || 1}. Abschlagsrechnung`;
   if (d.kind === 'rechnung' && d.invoiceType === 'schluss') return 'Schlussrechnung';
   return KINDS[d.kind].pdfTitle || KINDS[d.kind].label;
 }
-export const shortTitle = (d) => (d.kind === 'rechnung' && d.invoiceType === 'abschlag' ? `${d.abschlagNo || 1}. Abschlag` : d.kind === 'rechnung' && d.invoiceType === 'schluss' ? 'Schlussrechnung' : KINDS[d.kind].label);
+export const shortTitle = (d) => (d.isStorno ? 'Storno' : d.kind === 'rechnung' && d.invoiceType === 'abschlag' ? `${d.abschlagNo || 1}. Abschlag` : d.kind === 'rechnung' && d.invoiceType === 'schluss' ? 'Schlussrechnung' : KINDS[d.kind].label);

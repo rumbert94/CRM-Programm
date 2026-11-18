@@ -1,0 +1,27 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  p.on('dialog', (d) => d.accept());
+  await p.goto('http://localhost:4173/'); await p.click('text=Firma anlegen');
+  await p.fill('[name=name]', 'Muster GmbH'); await p.fill('[name=street]', 'Werkweg 3'); await p.fill('[name=zip]', '16515'); await p.fill('[name=city]', 'Oranienburg');
+  await p.click('button:has-text("Speichern")'); await p.waitForURL(/einstellungen/);
+  await p.click('nav >> text=Kunden'); await p.click('text=+ Neuer Kunde'); await p.fill('[name=name]', 'Erika Muster'); await p.fill('[name=city]', 'Berlin');
+  await p.click('form#f button:has-text("Speichern")'); await p.waitForSelector('#nf');
+  await p.click('text=+ Rechnung');
+  await p.click('#addItem'); await p.locator('[data-k=desc]').fill('Wartung'); await p.locator('[data-k=price]').fill('189');
+  await p.waitForTimeout(1500);
+  await p.click('#finalize'); await p.waitForSelector('#storno');
+  const h1 = await p.textContent('h1');
+  await p.click('#storno'); await p.waitForTimeout(1500);
+  const h2 = await p.textContent('h1');
+  await p.click('#finalize'); await p.waitForTimeout(1500);
+  const h3 = await p.textContent('h1');
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#zugferd')]);
+  const stornoBtn = await p.locator('#storno').count();
+  await p.click('nav >> text=Rechnungen'); await p.waitForTimeout(800);
+  const list = await p.locator('.list li').allTextContents();
+  console.log({ h1, h2, h3, file: dl.suggestedFilename(), stornoBtn, list, errs });
+  await b.close();
+})();

@@ -69,7 +69,8 @@ function nextNumber(kind, c) {
   const startApplies = !cfg.startYear || Number(cfg.startYear) === new Date().getFullYear();
   let max = startApplies ? Number(cfg.start || 1) - 1 : 0;
   for (const d of db.allRaw()) {
-    if (d.type !== 'doc' || d.companyId !== c.id || d.kind !== kind || !d.number) continue;
+    if (d.type !== 'doc' || d.companyId !== c.id || !d.number) continue;
+    if ((d.isStorno ? 'storno' : d.kind) !== kind) continue;
     // auch alte Nummern wie A2601 / AB2601 berücksichtigen
     const num = d.number.startsWith(prefix) ? d.number : d.number.replace(/^[A-Za-z]+-?/, '');
     if (!num.startsWith(prefix)) continue;
@@ -436,7 +437,7 @@ function stdTextsFor(d, c) {
   };
 }
 function refreshStdTexts(d, c) {
-  if (d.locked || d.isCreditNote) return;
+  if (d.locked || d.isCreditNote || d.isStorno) return;
   const want = stdTextsFor(d, c);
   const auto = d.autoTexts;
   for (const k of Object.keys(want)) {
@@ -522,11 +523,11 @@ async function viewDoc(id, params, kindForNew) {
       : d.kind === 'rechnung'
         ? '<button class="btn" id="pdf">Vorschau (Entwurf)</button>'
         : '<button class="btn primary" id="pdfDl">PDF herunterladen</button><button class="btn" id="pdf">Ansehen</button>'}
-    ${d.kind === 'rechnung' && !d.locked ? '<button class="btn primary" id="finalize">Rechnung abschließen</button>' : ''}
+    ${d.kind === 'rechnung' && !d.locked ? `<button class="btn primary" id="finalize">${d.isStorno ? 'Stornorechnung' : 'Rechnung'} abschließen</button>` : ''}
     ${d.kind === 'angebot' ? '<button class="btn primary" id="toAuftrag">In Auftrag überführen →</button><button class="btn" id="toRechnung">Direkt in Rechnung →</button>' : ''}
     ${d.kind === 'auftrag' ? `<button class="btn primary" id="toRechnung">${relatedAbschlaege(d).length ? 'Schlussrechnung erstellen →' : 'In Rechnung überführen →'}</button>` : ''}
     ${d.kind !== 'rechnung' ? '<button class="btn" id="toAbschlag">Abschlagsrechnung</button>' : ''}
-    ${!d.isCreditNote && d.kind === 'rechnung' && d.locked && d.status !== 'Storniert' ? '<button class="btn danger" id="storno">Stornieren</button>' : ''}
+    ${!d.isCreditNote && !d.isStorno && d.kind === 'rechnung' && d.locked && d.status !== 'Storniert' ? '<button class="btn danger" id="storno">Stornieren</button>' : ''}
     ${!d.locked ? '<button class="btn danger" id="del">Löschen</button>' : ''}
     <button class="btn" id="copy">Kopieren</button>
     <button class="btn" id="pvToggle">${previewOpen() ? 'Schnellansicht aus' : 'Schnellansicht'}</button>
@@ -795,15 +796,15 @@ async function viewDoc(id, params, kindForNew) {
     const k = db.get(d.customerId);
     const problems = checkEInvoice({ ...d, number: 'x' }, c, k, 'zugferd');
     if (problems.length && !confirm('Für eine gültige E-Rechnung fehlt noch:\n• ' + problems.join('\n• ') + '\n\nTrotzdem abschließen?')) return;
-    if (!confirm('Rechnung jetzt abschließen? Danach erhält sie eine feste Nummer und kann nicht mehr geändert werden.')) return;
-    d.number = nextNumber('rechnung', c);
+    if (!confirm(`${d.isStorno ? 'Stornorechnung' : 'Rechnung'} jetzt abschließen? Danach erhält sie eine feste Nummer und kann nicht mehr geändert werden.`)) return;
+    d.number = nextNumber(d.isStorno ? 'storno' : 'rechnung', c);
     d.locked = true;
     d.lockedAt = Date.now();
     d.status = 'Versendet';
     d.customerSnapshot = { ...k };
     d.companySnapshot = { ...c };
     await db.put(d);
-    toast('Rechnung ' + d.number + ' abgeschlossen');
+    toast(docTitle(d) + ' ' + d.number + ' abgeschlossen');
     viewDoc(d.id, params);
   });
   const companyForDoc = () => ({ ...(d.companySnapshot || {}), ...c, letterheadFileId: c.letterheadFileId });
@@ -878,18 +879,25 @@ async function viewDoc(id, params, kindForNew) {
     download(xml, name, 'application/xml');
   });
   $('#storno') && ($('#storno').onclick = async () => {
-    if (!confirm(`Rechnung ${d.number} stornieren? Es wird eine Stornorechnung mit negativen Beträgen erstellt.`)) return;
+    if (!confirm(`Rechnung ${d.number} stornieren? Es wird eine Stornorechnung (eigene Nummer, Datei S…) mit negativen Beträgen erstellt.`)) return;
     const s = newDoc('rechnung', {
       customerId: d.customerId,
+      isStorno: true,
+      title: d.title,
+      serviceMode: d.serviceMode,
+      serviceFrom: d.serviceFrom,
+      serviceTo: d.serviceTo,
       subject: `Storno zu Rechnung ${d.number} vom ${fmtDate(d.date)}`,
       items: d.items.map((i) => ({ ...i, id: uid(), qty: -parseNum(i.qty) })),
       taxMode: d.taxMode,
       sourceId: d.id,
       sourceNumber: d.number,
+      sourceDate: d.date,
       serviceDate: d.serviceDate,
       isCreditNote: false,
-      intro: `Hiermit stornieren wir unsere Rechnung ${d.number} vom ${fmtDate(d.date)}.`,
+      intro: `Hiermit wird die Rechnung Nr. ${d.number} vom ${fmtDate(d.date)} vollständig storniert.`,
       paymentTerms: '',
+      dueDate: '',
     });
     await db.put({ ...d, status: 'Storniert' });
     await db.put(s);
@@ -1156,6 +1164,7 @@ async function viewCompany(id) {
       ${field('Rechnungsnummer: Vorsatz', 'numbering.rechnung.prefix', pfx('rechnung'), { hint: '{JJ} = Jahr zweistellig (26), {JAHR} = 2026' })}
       ${field('Rechnungsnummer: Stellen der lfd. Nr.', 'numbering.rechnung.digits', n.rechnung?.digits ?? KINDS.rechnung.digits, { type: 'number', hint: `nächste Rechnung: <b>${esc(isNew ? '' : nextNumber('rechnung', c))}</b>` })}
       ${field('Nächste lfd. Rechnungsnr. in diesem Jahr', 'numbering.rechnung.start', n.rechnung?.startYear == new Date().getFullYear() ? n.rechnung?.start ?? '' : '', { type: 'number', hint: 'z. B. 9 → 2609, wenn du bisher bis 2608 geschrieben hast' })}
+      ${isNew ? '' : `<p class="muted small full">Stornorechnungen haben einen eigenen Nummernkreis, nächste: <b>${esc(nextNumber('storno', c))}</b> (Datei S${esc(nextNumber('storno', c))}.pdf)</p>`}
       ${field('Angebotsnummer: Vorsatz', 'numbering.angebot.prefix', pfx('angebot'))}
       ${field('Angebotsnummer: Stellen', 'numbering.angebot.digits', n.angebot?.digits ?? KINDS.angebot.digits, { type: 'number' })}
       ${field('Auftragsnummer: Vorsatz', 'numbering.auftrag.prefix', pfx('auftrag'))}

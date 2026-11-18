@@ -81,6 +81,7 @@ export function buildCII(doc, company, customer, profile = 'zugferd') {
   if (doc.invoiceType === 'abschlag') notes.push(`${doc.abschlagNo || 1}. Abschlagsrechnung${doc.sourceNumber ? ' zu ' + doc.sourceNumber : ''}`);
   if (doc.invoiceType === 'schluss' && doc.deductions?.length)
     notes.push('Schlussrechnung. Bereits berechnete Abschläge: ' + doc.deductions.map((x) => `${x.number} (netto ${amt(x.net)}, USt ${amt(x.tax)}, brutto ${amt(x.gross)} EUR)`).join('; '));
+  if (doc.isStorno && doc.sourceNumber) notes.push(`Stornorechnung zu Rechnung ${doc.sourceNumber}`);
   if (company.smallBusiness) notes.push('Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.');
   if (doc.taxMode === 'reverse') notes.push('Steuerschuldnerschaft des Leistungsempfängers (§ 13b UStG).');
   // Pflichtangabe BT-22 für Sitz/Registrierung (optional, hilft bei Prüfern)
@@ -123,7 +124,7 @@ export function buildCII(doc, company, customer, profile = 'zugferd') {
       }</ram:SpecifiedTradeSettlementPaymentMeans>`
     : `<ram:SpecifiedTradeSettlementPaymentMeans><ram:TypeCode>1</ram:TypeCode></ram:SpecifiedTradeSettlementPaymentMeans>`;
 
-  const termsText = (doc.paymentTerms || '').trim() || (doc.dueDate ? '' : 'Zahlbar sofort ohne Abzug.');
+  const termsText = (doc.paymentTerms || '').trim() || (doc.isStorno ? `Storno der Rechnung ${doc.sourceNumber || ''}. Bereits gezahlte Beträge werden erstattet.` : doc.dueDate ? '' : 'Zahlbar sofort ohne Abzug.');
   const terms = `<ram:SpecifiedTradePaymentTerms>${tag('Description', termsText)}${
     doc.dueDate ? `<ram:DueDateDateTime>${d102(doc.dueDate)}</ram:DueDateDateTime>` : ''
   }</ram:SpecifiedTradePaymentTerms>`;
@@ -174,6 +175,7 @@ ${terms}
 ${parseNum(doc.prepaid || 0) > 0 ? `<ram:TotalPrepaidAmount>${amt(parseNum(doc.prepaid))}</ram:TotalPrepaidAmount>` : ''}
 <ram:DuePayableAmount>${amt(t.gross - parseNum(doc.prepaid || 0))}</ram:DuePayableAmount>
 </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+${doc.isStorno && doc.sourceNumber ? `<ram:InvoiceReferencedDocument><ram:IssuerAssignedID>${x(doc.sourceNumber)}</ram:IssuerAssignedID>${doc.sourceDate ? `<ram:FormattedIssueDateTime><qdt:DateTimeString format="102">${doc.sourceDate.replace(/-/g, '').slice(0, 8)}</qdt:DateTimeString></ram:FormattedIssueDateTime>` : ''}</ram:InvoiceReferencedDocument>` : ''}
 </ram:ApplicableHeaderTradeSettlement>
 </rsm:SupplyChainTradeTransaction>
 </rsm:CrossIndustryInvoice>
