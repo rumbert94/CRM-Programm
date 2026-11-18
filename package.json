@@ -16,6 +16,7 @@
     "vite": "^6.4.6"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
     "@azure/msal-browser": "^5.29.1",
     "@pdf-lib/fontkit": "^1.1.1",
     "pdf-lib": "^1.17.1",

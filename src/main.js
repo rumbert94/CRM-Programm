@@ -4,6 +4,7 @@ import * as sync from './sync.js';
 const buildPdf = async (...a) => (await import('./pdf.js')).buildPdf(...a);
 import { buildCII, checkEInvoice } from './einvoice.js';
 import { initReports, REGIE_LEGAL_DEFAULT, TRAVEL } from './report.js';
+import { getAiKey, setAiKey } from './ai-key.js';
 import {
   LAYOUT_DEFAULTS, OLD_PREFIXES, docTitle, shortTitle, round2, unitLabel, numberPrefix, docFileName, numberItems, esc, uid, eur, fmtDate, fmtDateTime, today, addDays, calcTotals, parseNum, UNITS, KINDS, STATUS, debounce, download, safeFile, fmtNum,
 } from './util.js';
@@ -611,7 +612,7 @@ async function viewDoc(id, params, kindForNew) {
 
   <h2>Positionen</h2>
   <div id="items"></div>
-  ${locked ? '' : '<div class="actions"><button class="btn" id="addItem">+ Position</button><button class="btn" id="addTitle">+ Titel</button><button class="btn" id="fromTpl">+ Aus Vorlagen</button></div>'}
+  ${locked ? '' : '<div class="actions"><button class="btn" id="addItem">+ Position</button><button class="btn" id="addTitle">+ Titel</button><button class="btn" id="fromTpl">+ Aus Vorlagen</button><button class="btn ai" id="aiFill">✨ Mit KI ausfüllen</button></div>'}
   <div id="totals" class="totals"></div>
   ${d.kind === 'rechnung' && d.invoiceType === 'schluss' ? `<h2>Abzuziehende Abschlagsrechnungen</h2><div id="deductions"></div>` : ''}
   ${d.kind !== 'rechnung' ? abschlagOverview(d) : ''}
@@ -756,6 +757,12 @@ async function viewDoc(id, params, kindForNew) {
       renderItems();
       $$('#items .item').at(-1).querySelector('input').focus();
     };
+    $('#aiFill').onclick = () =>
+      aiSheet(d, c, (items) => {
+        d.items.push(...items);
+        renderItems();
+        autosave();
+      });
     $('#fromTpl').onclick = () =>
       pickTemplate((tpl) => {
         d.items.push({ id: uid(), title: tpl.title || '', desc: tpl.desc || '', qty: '1', unit: tpl.unit || 'H87', price: tpl.price ?? '', vat: tpl.vat ?? c.defaultVat ?? 19 });
@@ -1113,6 +1120,116 @@ async function saveTemplate(it) {
 const tplMatches = (a, q) => !q || [a.title, a.desc].join(' ').toLowerCase().includes(q.toLowerCase());
 const tplLabel = (a) => a.title || (a.desc || '').split('\n')[0].slice(0, 80);
 
+// KI-Assistent: Beschreibung (Text oder Sprache) → Positionsvorschläge zum Prüfen
+function aiSheet(d, c, onApply) {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  const hasKey = !!getAiKey();
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  ov.innerHTML = `<div class="sheet ai-sheet"><div class="bar"><h2>✨ Mit KI ausfüllen</h2><button class="link" data-close>Schließen</button></div>
+    ${hasKey ? '' : '<p class="info">Noch kein API-Schlüssel auf diesem Gerät. Bitte zuerst unter <a href="#/firma/' + c.id + '" data-close>Einstellungen → KI-Assistent</a> eintragen.</p>'}
+    <label>Was wurde gemacht bzw. soll angeboten werden?
+      <textarea id="aiText" rows="5" placeholder="z. B. Heizkörper im Bad getauscht, 2 Monteure je 3 Stunden, 25 km Anfahrt, Thermostatkopf und 2 Ventile verbaut"></textarea></label>
+    <div class="actions">
+      ${SR ? '<button type="button" class="btn" id="aiMic">🎤 Sprechen</button>' : '<small class="muted">Tipp: Mit dem Mikrofon der Tastatur kannst du auch diktieren.</small>'}
+      <button type="button" class="btn primary" id="aiGo" ${hasKey ? '' : 'disabled'}>Vorschläge holen</button>
+    </div>
+    <div id="aiOut"></div></div>`;
+  document.body.appendChild(ov);
+  const close = () => {
+    rec?.stop();
+    ov.remove();
+  };
+  ov.addEventListener('click', (e) => {
+    if (e.target === ov || e.target.closest('[data-close]')) close();
+  });
+  const ta = $('#aiText', ov);
+  ta.focus();
+
+  let rec;
+  if (SR) {
+    const mic = $('#aiMic', ov);
+    mic.onclick = () => {
+      if (rec) return rec.stop();
+      rec = new SR();
+      rec.lang = 'de-DE';
+      rec.continuous = true;
+      rec.interimResults = false;
+      const base = ta.value ? ta.value.trimEnd() + ' ' : '';
+      let said = '';
+      rec.onresult = (ev) => {
+        said = Array.from(ev.results).map((r) => r[0].transcript).join(' ');
+        ta.value = base + said;
+      };
+      rec.onerror = (ev) => toast('Spracheingabe: ' + (ev.error === 'not-allowed' ? 'Mikrofon nicht erlaubt' : ev.error), 'err');
+      rec.onend = () => {
+        rec = null;
+        mic.textContent = '🎤 Sprechen';
+        mic.classList.remove('rec');
+      };
+      rec.start();
+      mic.textContent = '⏹ Stopp';
+      mic.classList.add('rec');
+    };
+  }
+
+  let result = [];
+  $('#aiGo', ov).onclick = async () => {
+    const text = ta.value.trim();
+    if (!text) return toast('Bitte zuerst beschreiben, was gemacht wurde', 'err');
+    rec?.stop();
+    const go = $('#aiGo', ov);
+    const out = $('#aiOut', ov);
+    go.disabled = true;
+    go.textContent = 'KI denkt nach …';
+    out.innerHTML = '<p class="muted">Das dauert meist 10 bis 30 Sekunden.</p>';
+    try {
+      const { suggestPositions } = await import('./ai.js');
+      const templates = db.all('article', (a) => a.companyId === companyId);
+      const res = await suggestPositions({ text, kind: d.kind, templates, company: c, customer: d.customerSnapshot || db.get(d.customerId) });
+      result = res.positions;
+      out.innerHTML = result.length
+        ? `${res.note ? `<p class="info">${esc(res.note)}</p>` : ''}
+          <ul class="ai-list">${result
+            .map(
+              (p, i) => `<li><label><input type="checkbox" data-i="${i}" checked>
+                <div><b>${esc(p.title || p.desc.split('\n')[0])}</b>${p.template ? ' <span class="badge">Vorlage</span>' : ''}${p.estimated ? ' <span class="badge warn">Preis geschätzt</span>' : ''}
+                <br><small>${esc(p.desc).slice(0, 220)}</small></div>
+                <div class="right">${fmtNum(p.qty)} ${esc(unitLabel(p.unit))}<br><b>${eur(p.qty * p.price)}</b><br><small>je ${eur(p.price)}</small></div></label></li>`,
+            )
+            .join('')}</ul>
+          <div class="actions"><button type="button" class="btn primary" id="aiTake">Ausgewählte übernehmen</button></div>
+          <p class="muted"><small>Bitte Mengen und Preise prüfen. Du kannst alles danach noch ändern.</small></p>`
+        : `<p class="info">Keine Positionen gefunden. ${esc(res.note || '')}</p>`;
+      $('#aiTake', ov) &&
+        ($('#aiTake', ov).onclick = () => {
+          const picked = $$('[data-i]', ov).filter((cb) => cb.checked).map((cb) => result[Number(cb.dataset.i)]);
+          if (!picked.length) return toast('Nichts ausgewählt', 'err');
+          onApply(
+            picked.map((p) => ({
+              id: uid(),
+              title: p.title || '',
+              desc: p.desc || '',
+              qty: fmtNum(p.qty),
+              unit: p.unit || 'H87',
+              price: p.price,
+              vat: p.template?.vat ?? c.defaultVat ?? 19,
+            })),
+          );
+          for (const p of picked) if (p.template) db.put({ ...p.template, usage: (p.template.usage || 0) + 1 }, { silent: true });
+          close();
+          toast(picked.length + ' Position(en) übernommen');
+        });
+    } catch (e) {
+      console.error(e);
+      out.innerHTML = `<p class="info err">${esc(e.message)}</p>`;
+    } finally {
+      go.disabled = false;
+      go.textContent = 'Vorschläge holen';
+    }
+  };
+}
+
 function pickTemplate(onPick) {
   const ov = document.createElement('div');
   ov.className = 'overlay';
@@ -1288,6 +1405,13 @@ async function viewCompany(id) {
       ${field('Umsatzsteuersätze in %', 'vatRates', c.vatRates ?? '19; 7; 0', { hint: 'mit Semikolon getrennt, z. B. „19; 7; 0“. Bei einer Steueränderung hier anpassen und Standard-USt. neu wählen. Alte Belege behalten ihren Satz.' })}
       ${select('Standard-USt.', 'defaultVat', c.defaultVat ?? 19, vatRates(c, c.defaultVat).map((v) => ({ value: v, label: fmtNum(v) + ' %' })))}
     </div>
+    <h2>KI-Assistent</h2>
+    <div class="grid">
+      <label class="full">Anthropic API-Schlüssel (nur auf diesem Gerät gespeichert)
+        <input type="password" id="aiKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" value="${esc(getAiKey())}">
+        <small class="muted">Der Schlüssel wird nicht synchronisiert und nicht in Belegen gespeichert. Auf jedem Gerät einmal eintragen. Schlüssel erstellen unter <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>.</small>
+      </label>
+    </div>
     <h2>Regiebericht</h2>
     <div class="grid">
       ${field('Standard-Stundensatz (netto €)', 'regie.rate', c.regie?.rate ?? '', { attrs: 'inputmode="decimal"', hint: 'gilt für Monteure ohne eigenen Stundensatz (Stammdaten → Monteure)' })}
@@ -1315,6 +1439,10 @@ async function viewCompany(id) {
   </form>`, 'settings');
 
   makeCollapsible($('#f'), isNew);
+  $('#aiKey')?.addEventListener('change', (e) => {
+    setAiKey(e.target.value);
+    toast(e.target.value.trim() ? 'API-Schlüssel auf diesem Gerät gespeichert' : 'API-Schlüssel entfernt');
+  });
 
   const collect = () => {
     const data = formData($('#f'));
