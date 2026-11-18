@@ -432,6 +432,7 @@ async function viewDoc(id, params, kindForNew) {
   const reverseAllowed = !c.smallBusiness;
 
   shell(`
+  <div class="doc-layout ${previewOpen() ? 'pv-on' : ''}"><div class="editor">
   <div class="bar"><h1>${d.isCreditNote ? 'Storno' : esc(docTitle(d))} ${d.number ? 'Nr. ' + esc(d.number) : '(Entwurf)'}</h1>
     <span><span class="badge ${esc(d.status)}">${esc(d.status)}</span>${locked ? ' <span class="badge einv">✓ E-Rechnung (ZUGFeRD)</span>' : ''}</span></div>
   ${flowHtml(d)}
@@ -483,8 +484,16 @@ async function viewDoc(id, params, kindForNew) {
     ${!d.isCreditNote && d.kind === 'rechnung' && d.locked && d.status !== 'Storniert' ? '<button class="btn danger" id="storno">Stornieren</button>' : ''}
     ${!d.locked ? '<button class="btn danger" id="del">Löschen</button>' : ''}
     <button class="btn" id="copy">Kopieren</button>
+    <button class="btn" id="pvToggle">${previewOpen() ? 'Schnellansicht aus' : 'Schnellansicht'}</button>
   </div>
-  <p class="muted" id="saveState"></p>`, d.kind);
+  <p class="muted" id="saveState"></p>
+  </div>
+  <aside class="preview" id="pvPane">
+    <div class="pv-head"><b>Schnellansicht</b><span class="muted small" id="pvState"></span><button class="link" id="pvClose">Schließen ✕</button></div>
+    <div class="pv-body" id="pvBody"><p class="muted">Wird erstellt …</p></div>
+  </aside></div>
+  <button class="pv-fab" id="pvFab" aria-label="Schnellansicht">👁 Vorschau</button>`, d.kind);
+  document.querySelector('main').classList.add('wide');
 
   const save = async () => {
     Object.assign(d, formData($('#f')), formData($('#f2')));
@@ -501,10 +510,12 @@ async function viewDoc(id, params, kindForNew) {
     }
     const st = $('#saveState');
     if (!d.customerId) {
+      schedulePreview();
       if (st) st.textContent = 'Entwurf gespeichert – bitte noch einen Kunden wählen.';
       return false;
     }
     if (st) st.textContent = 'Automatisch gespeichert ' + new Date().toLocaleTimeString('de-DE');
+    schedulePreview();
     return true;
   };
   const autosaveDebounced = debounce(save, 700);
@@ -748,6 +759,55 @@ async function viewDoc(id, params, kindForNew) {
     viewDoc(d.id, params);
   });
   const companyForDoc = () => ({ ...(d.companySnapshot || {}), ...c, letterheadFileId: c.letterheadFileId });
+
+  // ---- Schnellansicht (live) ----
+  const layoutEl = $('.doc-layout');
+  const pvVisible = () => layoutEl.classList.contains('pv-on') || layoutEl.classList.contains('pv-mobile');
+  let pvBusy = false;
+  let pvAgain = false;
+  const refreshPreview = async () => {
+    if (!pvVisible() || !document.body.contains(layoutEl)) return;
+    if (pvBusy) return void (pvAgain = true);
+    pvBusy = true;
+    $('#pvState').textContent = 'aktualisiere …';
+    try {
+      const bytes = await buildPdf(d, d.locked ? companyForDoc() : c, customer() || {});
+      const { renderPreview } = await import('./preview.js');
+      await renderPreview($('#pvBody'), bytes);
+      $('#pvState').textContent = 'Stand ' + new Date().toLocaleTimeString('de-DE');
+    } catch (e) {
+      console.error(e);
+      $('#pvState').textContent = 'Fehler: ' + e.message;
+    } finally {
+      pvBusy = false;
+      if (pvAgain) {
+        pvAgain = false;
+        refreshPreview();
+      }
+    }
+  };
+  schedulePreview = debounce(refreshPreview, 400);
+  const setPv = (on) => {
+    setPreviewOpen(on);
+    layoutEl.classList.toggle('pv-on', on);
+    $('#pvToggle').textContent = on ? 'Schnellansicht aus' : 'Schnellansicht';
+    if (on) refreshPreview();
+  };
+  $('#pvToggle').onclick = () => {
+    if (matchMedia('(max-width: 1099px)').matches) {
+      layoutEl.classList.add('pv-mobile');
+      refreshPreview();
+    } else setPv(!layoutEl.classList.contains('pv-on'));
+  };
+  $('#pvFab').onclick = () => {
+    layoutEl.classList.add('pv-mobile');
+    refreshPreview();
+  };
+  $('#pvClose').onclick = () => {
+    if (layoutEl.classList.contains('pv-mobile')) layoutEl.classList.remove('pv-mobile');
+    else setPv(false);
+  };
+  if (pvVisible() && matchMedia('(min-width: 1100px)').matches) refreshPreview();
   $('#zugferd') && ($('#zugferd').onclick = async () => {
     const problems = checkEInvoice(d, companyForDoc(), customer(), 'zugferd');
     if (problems.length) toast('Hinweis: ' + problems.join(', '), 'err');
@@ -1224,6 +1284,13 @@ function viewWelcome() {
 
 // ---------- Router ----------
 let pendingSave = null;
+let schedulePreview = () => {};
+const previewOpen = () => {
+  try { return localStorage.getItem('previewOpen') !== '0'; } catch { return true; }
+};
+const setPreviewOpen = (on) => {
+  try { localStorage.setItem('previewOpen', on ? '1' : '0'); } catch {}
+};
 async function flushSave() {
   const f = pendingSave;
   pendingSave = null;
@@ -1238,6 +1305,7 @@ window.addEventListener('pagehide', () => pendingSave && pendingSave());
 
 async function route() {
   await flushSave();
+  schedulePreview = () => {};
   const [path, qs] = location.hash.slice(1).split('?');
   const params = new URLSearchParams(qs || '');
   const parts = (path || '/').split('/').filter(Boolean);
