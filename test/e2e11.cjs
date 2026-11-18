@@ -25,6 +25,8 @@ const { chromium, devices } = require('playwright');
   await p.click('#themeBtn');
   await p.setViewportSize({ width: 412, height: 900 }); await p.waitForTimeout(400);
   await p.screenshot({ path: 'test/shots/design-mobile.png' });
+  await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(400);
+  await p.screenshot({ path: 'test/shots/design-home-mobile.png' });
   console.log({ errs });
   await b.close();
 })();

@@ -175,7 +175,7 @@ function shell(content, active = '') {
     const cls = k === 'kunden' ? 'plain' : k === 'rechnung' && overdue ? 'alert' : '';
     return `<span class="count ${cls}">${cnt[k]}</span>`;
   };
-  const link = ([h, l, k], sub = false) => `<a href="${h}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${icon(k)}<span class="lbl">${l}</span>${badge(k)}</a>`;
+  const link = ([h, l, k], sub = false) => `<a href="${h}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${icon(k)}<span class="lbl">${l}</span></a>`;
   const navHtml = nav
     .map((n) => (Array.isArray(n[1]) ? `<div class="nav-group">${esc(n[0])}</div>${n[1].map((x) => link(x, true)).join('')}` : link(n)))
     .join('');
@@ -243,19 +243,20 @@ function viewHome() {
   const sum = (arr) => arr.reduce((s, d) => s + calcTotals(d, c).gross, 0);
   const recent = docs.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
   shell(`
-  ${pageHead('Übersicht', '<a class="btn primary" href="#/beleg/neu/rechnung">+ Rechnung</a>')}
-  <div class="cards">
-    <a class="stat" href="#/belege/rechnung?f=offen"><b>${eur(sum(offen))}</b><span>${offen.length} offene Rechnungen</span></a>
-    <a class="stat ${ueberfaellig.length ? 'warn' : ''}" href="#/belege/rechnung?f=ueberfaellig"><b>${ueberfaellig.length}</b><span>überfällig</span></a>
-    <a class="stat" href="#/belege/angebot"><b>${eur(sum(angebote))}</b><span>${angebote.length} offene Angebote</span></a>
-    <a class="stat" href="#/belege/auftrag"><b>${auftraege.length}</b><span>laufende Aufträge</span></a>
+  ${pageHead('Übersicht')}
+  <div class="tiles">
+    <a class="tile" href="#/kunde/neu">${icon('kunden')}<span>+ Neuer Kunde</span></a>
+    <a class="tile" href="#/beleg/neu/angebot">${icon('angebot')}<span>+ Neues Angebot</span></a>
+    <a class="tile" href="#/beleg/neu/auftrag">${icon('auftrag')}<span>+ Neuer Auftrag</span></a>
+    <a class="tile" href="#/beleg/neu/rechnung">${icon('rechnung')}<span>+ Neue Rechnung</span></a>
   </div>
-  <div class="actions">
-    <a class="btn" href="#/kunde/neu">+ Kunde</a>
-    <a class="btn" href="#/beleg/neu/angebot">+ Angebot</a>
-    <a class="btn" href="#/beleg/neu/auftrag">+ Auftrag</a>
+  <div class="cards stats4">
+    <a class="stat" href="#/belege/rechnung?f=offen"><span>Offene Rechnungen</span><b>${eur(sum(offen))}</b><small>${offen.length} ${offen.length === 1 ? 'Rechnung' : 'Rechnungen'}</small></a>
+    <a class="stat ${ueberfaellig.length ? 'warn' : ''}" href="#/belege/rechnung?f=ueberfaellig"><span>Überfällig</span><b>${eur(sum(ueberfaellig))}</b><small>${ueberfaellig.length} ${ueberfaellig.length === 1 ? 'Rechnung' : 'Rechnungen'}</small></a>
+    <a class="stat" href="#/belege/angebot?f=offen"><span>Offene Angebote</span><b>${eur(sum(angebote))}</b><small>${angebote.length} ${angebote.length === 1 ? 'Angebot' : 'Angebote'}</small></a>
+    <a class="stat" href="#/belege/auftrag"><span>Laufende Aufträge</span><b>${eur(sum(auftraege))}</b><small>${auftraege.length} ${auftraege.length === 1 ? 'Auftrag' : 'Aufträge'}</small></a>
   </div>
-  <h2>Zuletzt bearbeitet</h2>
+  <h2 class="sec">Zuletzt bearbeitet</h2>
   ${docList(recent)}`, 'home');
 }
 
