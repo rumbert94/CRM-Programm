@@ -62,8 +62,11 @@ function nextNumber(kind, c) {
   const startApplies = !cfg.startYear || Number(cfg.startYear) === new Date().getFullYear();
   let max = startApplies ? Number(cfg.start || 1) - 1 : 0;
   for (const d of db.allRaw()) {
-    if (d.type !== 'doc' || d.companyId !== c.id || d.kind !== kind || !d.number?.startsWith(prefix)) continue;
-    const rest = d.number.slice(prefix.length);
+    if (d.type !== 'doc' || d.companyId !== c.id || d.kind !== kind || !d.number) continue;
+    // auch alte Nummern wie A2601 / AB2601 berücksichtigen
+    const num = d.number.startsWith(prefix) ? d.number : d.number.replace(/^[A-Za-z]+-?/, '');
+    if (!num.startsWith(prefix)) continue;
+    const rest = num.slice(prefix.length);
     if (!/^\d+$/.test(rest)) continue;
     const n = parseInt(rest, 10);
     if (n > max) max = n;
@@ -470,7 +473,9 @@ async function viewDoc(id, params, kindForNew) {
   <div class="actions sticky">
     ${d.kind === 'rechnung' && d.locked
       ? '<button class="btn primary" id="zugferd">E-Rechnung (PDF) herunterladen</button><button class="btn" id="pdf">Ansehen</button><button class="btn" id="xrechnung">XRechnung (nur XML, für Behörden)</button>'
-      : `<button class="btn" id="pdf">${d.kind === 'rechnung' ? 'Vorschau (Entwurf)' : 'PDF ansehen'}</button>`}
+      : d.kind === 'rechnung'
+        ? '<button class="btn" id="pdf">Vorschau (Entwurf)</button>'
+        : '<button class="btn primary" id="pdfDl">PDF herunterladen</button><button class="btn" id="pdf">Ansehen</button>'}
     ${d.kind === 'rechnung' && !d.locked ? '<button class="btn primary" id="finalize">Rechnung abschließen</button>' : ''}
     ${d.kind === 'angebot' ? '<button class="btn primary" id="toAuftrag">In Auftrag überführen →</button><button class="btn" id="toRechnung">Direkt in Rechnung →</button>' : ''}
     ${d.kind === 'auftrag' ? `<button class="btn primary" id="toRechnung">${relatedAbschlaege(d).length ? 'Schlussrechnung erstellen →' : 'In Rechnung überführen →'}</button>` : ''}
@@ -624,6 +629,18 @@ async function viewDoc(id, params, kindForNew) {
       toast('PDF-Fehler: ' + e.message, 'err');
     }
   };
+  $('#pdfDl') && ($('#pdfDl').onclick = async () => {
+    if (!(await save())) return toast('Bitte zuerst einen Kunden wählen.', 'err');
+    try {
+      const bytes = await buildPdf(d, c, customer());
+      const name = fileBase() + '.pdf';
+      await offerArchive(bytes, name, 'application/pdf');
+      download(bytes, name, 'application/pdf');
+    } catch (e) {
+      console.error(e);
+      toast('PDF-Fehler: ' + e.message, 'err');
+    }
+  });
   const convertTo = (kind) => async () => {
     if (!(await save())) return;
     const n = convert(d, kind);

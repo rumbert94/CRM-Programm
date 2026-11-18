@@ -59,12 +59,12 @@ export const UNITS = [
 export const unitLabel = (code) => UNITS.find((u) => u.code === code)?.label || code || '';
 
 export const KINDS = {
-  angebot: { label: 'Angebot', plural: 'Angebote', prefix: 'A{JJ}', digits: 2, file: '' },
-  auftrag: { label: 'Auftrag', plural: 'Aufträge', prefix: 'AB{JJ}', digits: 2, pdfTitle: 'Auftragsbestätigung', file: '' },
+  angebot: { label: 'Angebot', plural: 'Angebote', prefix: '{JJ}', digits: 2, file: 'AN' },
+  auftrag: { label: 'Auftrag', plural: 'Aufträge', prefix: '{JJ}', digits: 2, pdfTitle: 'Auftragsbestätigung', file: 'AB' },
   rechnung: { label: 'Rechnung', plural: 'Rechnungen', prefix: '{JJ}', digits: 2, file: 'R' },
 };
 // Frühere Standardpräfixe (werden automatisch auf die neuen umgestellt)
-export const OLD_PREFIXES = ['AN-{JAHR}-', 'AB-{JAHR}-', 'RE-{JAHR}-'];
+export const OLD_PREFIXES = ['AN-{JAHR}-', 'AB-{JAHR}-', 'RE-{JAHR}-', 'A{JJ}', 'AB{JJ}'];
 
 export function numberPrefix(kind, c, date = new Date()) {
   let cfg = c?.numbering?.[kind] || {};
@@ -74,9 +74,10 @@ export function numberPrefix(kind, c, date = new Date()) {
 }
 
 // Dateiname wie in Lexware: Rechnung 2609 -> R2609
+// Dateiname: Rechnung 2609 -> R2609, Angebot 2601 -> AN2601, Auftrag 2601 -> AB2601
 export const docFileName = (d) => {
-  const nr = d.number || 'Entwurf';
-  return (d.kind === 'rechnung' && /^\d/.test(nr) ? 'R' : '') + nr;
+  if (!d.number) return `${KINDS[d.kind].label}-Entwurf`;
+  return KINDS[d.kind].file + d.number.replace(/^[A-Za-z]+-?/, '');
 };
 
 // Positionsnummern (mit Titeln: 1, 1.1, 1.2, 2, 2.1 …) und Titel-Zwischensummen
