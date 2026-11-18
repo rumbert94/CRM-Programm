@@ -364,7 +364,15 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
     para(company.privateNotice);
     y -= 8;
   }
-  if (company.texts?.extraText && kindOn('extraText', ['angebot', 'auftrag', 'rechnung'])) para(company.texts.extraText);
+  if (company.texts?.extraText && kindOn('extraText', ['angebot', 'auftrag', 'rechnung'])) {
+    para(company.texts.extraText);
+    y -= 8;
+  }
+  for (const ct of company.customTexts || []) {
+    if (ct.on === false || !ct.text?.trim() || ct.kinds?.[doc.kind] === false) continue;
+    para(ct.text);
+    y -= 8;
+  }
 
   // Seitenzahlen
   if (pages.length > 1)

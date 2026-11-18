@@ -883,6 +883,20 @@ function openPdf(bytes, name) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// Eigene Textfelder (Bezeichnung, Text, ein/aus, Belegarten)
+function ctBlock(ct) {
+  const kinds = ct.kinds || { angebot: true, auftrag: true, rechnung: true };
+  return `<div class="field full ct ${ct.on === false ? 'off' : ''}" data-ct="${ct.id}" data-textfield>
+    <div class="switch-row"><input class="ct-label" placeholder="Bezeichnung, z. B. Gewährleistung" value="${esc(ct.label || '')}">
+      <label class="switch"><input type="checkbox" class="ct-on" ${ct.on === false ? '' : 'checked'}><span class="track"></span><span class="sw-label">${ct.on === false ? 'aus' : 'ein'}</span></label></div>
+    <div class="kind-checks"><span>erscheint auf:</span>${Object.keys(KINDS)
+      .map((k) => `<label class="chip"><input type="checkbox" class="ct-kind" data-kind="${k}" ${kinds[k] ? 'checked' : ''}><span>${KINDS[k].label}</span></label>`)
+      .join('')}</div>
+    <textarea class="ct-text" rows="3" placeholder="Text, der unten auf dem Beleg erscheint">${esc(ct.text || '')}</textarea>
+    <div><button type="button" class="link danger ct-del">Textfeld entfernen</button></div>
+  </div>`;
+}
+
 function textField(c, label, key, name, value, hint = '') {
   const on = textOn(c, key);
   const kinds = TEXT_KIND_DEFAULTS[key]
@@ -890,7 +904,7 @@ function textField(c, label, key, name, value, hint = '') {
         .map((k) => {
           const v = c?.textsKinds?.[key]?.[k];
           const checked = v === undefined ? TEXT_KIND_DEFAULTS[key].includes(k) : !!v;
-          return `<label><input type="checkbox" name="textsKinds.${key}.${k}" ${checked ? 'checked' : ''}> ${KINDS[k].plural}</label>`;
+          return `<label class="chip"><input type="checkbox" name="textsKinds.${key}.${k}" ${checked ? 'checked' : ''}><span>${KINDS[k].label}</span></label>`;
         })
         .join('')}</div>`
     : '';
@@ -1129,6 +1143,8 @@ async function viewCompany(id) {
       ${textField(c, 'Schlusstext', 'outro', 'texts.outro', t.outro ?? 'Mit freundlichen Grüßen')}
       ${textField(c, 'Hinweis auf Rechnungen an Privatkunden', 'privateNotice', 'privateNotice', c.privateNotice ?? 'Bei Leistungen an einem Grundstück: Sie sind gesetzlich verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b UStG).', 'wird nur gedruckt, wenn der Kunde keine USt-IdNr. hat')}
       ${textField(c, 'Zusatztext (z. B. AGB, Eigentumsvorbehalt)', 'extraText', 'texts.extraText', t.extraText ?? '')}
+      <div id="customTexts" class="full">${(c.customTexts || []).map(ctBlock).join('')}</div>
+      <div class="actions full"><button type="button" class="btn" id="addCt">+ Eigenes Textfeld</button></div>
     </div>
     <div class="actions sticky"><button class="btn primary">Speichern</button>
       <button type="button" class="btn" id="preview">Probe-PDF (nur Layout, keine E-Rechnung)</button>
@@ -1140,6 +1156,13 @@ async function viewCompany(id) {
   const collect = () => {
     const data = formData($('#f'));
     const out = { ...c, layout2: { ...L }, numbering: structuredClone(c.numbering || {}), texts: { ...(c.texts || {}) }, textsOn: { ...(c.textsOn || {}) }, textsKinds: structuredClone(c.textsKinds || {}) };
+    out.customTexts = $$('#customTexts [data-ct]').map((el) => ({
+      id: el.dataset.ct,
+      label: $('.ct-label', el).value.trim(),
+      text: $('.ct-text', el).value,
+      on: $('.ct-on', el).checked,
+      kinds: Object.fromEntries($$('.ct-kind', el).map((cb) => [cb.dataset.kind, cb.checked])),
+    }));
     for (const [k, v] of Object.entries(data)) {
       const parts = k.split('.');
       let o = out;
@@ -1183,12 +1206,19 @@ async function viewCompany(id) {
     toast('Briefkopf gespeichert');
     viewCompany(saved.id);
   };
-  $$('[data-textfield] .switch input').forEach((cb) =>
-    cb.addEventListener('change', () => {
-      cb.closest('[data-textfield]').classList.toggle('off', !cb.checked);
-      cb.parentElement.querySelector('.sw-label').textContent = cb.checked ? 'ein' : 'aus';
-    })
-  );
+  $('#f').addEventListener('change', (e) => {
+    const cb = e.target.closest('.switch input');
+    if (!cb) return;
+    cb.closest('[data-textfield]').classList.toggle('off', !cb.checked);
+    cb.parentElement.querySelector('.sw-label').textContent = cb.checked ? 'ein' : 'aus';
+  });
+  $('#addCt').onclick = () => {
+    $('#customTexts').insertAdjacentHTML('beforeend', ctBlock({ id: uid() }));
+    $('#customTexts [data-ct]:last-child .ct-label').focus();
+  };
+  $('#customTexts').addEventListener('click', (e) => {
+    if (e.target.closest('.ct-del') && confirm('Textfeld entfernen?')) e.target.closest('[data-ct]').remove();
+  });
   $('#logoFile').onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;

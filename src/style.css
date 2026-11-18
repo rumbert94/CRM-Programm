@@ -211,3 +211,11 @@ main.wide { max-width: 1600px; }
 .kind-checks { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; align-items: center; font-size: 0.85rem; color: var(--muted); }
 .kind-checks label { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--text); cursor: pointer; }
 .kind-checks input { width: 20px; height: 20px; min-height: 0; }
+
+.chip { position: relative; }
+.chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.chip span { display: inline-block; padding: 0.35rem 0.85rem; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-weight: 600; user-select: none; }
+.chip input:checked + span { background: var(--btn); border-color: var(--btn); color: var(--btn-text); }
+.chip input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ct { border: 1px dashed var(--line); border-radius: var(--radius); padding: 0.7rem; margin-bottom: 0.8rem; }
+.ct .ct-label { font-weight: 600; }
