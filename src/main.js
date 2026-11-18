@@ -6,6 +6,7 @@ import { buildCII, checkEInvoice } from './einvoice.js';
 import { dashboardHtml, wireDashboard } from './dashboard.js';
 import { initReports, REGIE_LEGAL_DEFAULT, TRAVEL } from './report.js';
 import { getAiKey, setAiKey } from './ai-key.js';
+import { quickMemo, memoPage, openCount as memoOpen } from './memo.js';
 import { taskBoxHtml, wireTaskBox, runningJobs, progress, progressBar, toggleTask, jobItemRow } from './tasks.js';
 import {
   LAYOUT_DEFAULTS, OLD_PREFIXES, docTitle, shortTitle, round2, unitLabel, numberPrefix, docFileName, numberItems, esc, uid, eur, fmtDate, fmtDateTime, today, addDays, calcTotals, parseNum, UNITS, KINDS, STATUS, debounce, download, safeFile, fmtNum,
@@ -131,6 +132,7 @@ const ICON_PATHS = {
   rechnung: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   chevron: '<path d="m9 6 6 6-6 6"/>',
+  merkliste: '<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4"/><path d="M9 12h6M9 16h4"/>',
   aufgaben: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 5"/><path d="m3.5 12 1.2 1.2L7 11"/><path d="m3.5 18 1.2 1.2L7 17"/>',
   monteure: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
   bericht: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
@@ -184,6 +186,7 @@ function shell(content, active = '') {
     ]],
     ['Projekte', [
       ['#/aufgaben', 'Aufgaben', 'aufgaben'],
+      ['#/merkliste', 'Merkliste', 'merkliste'],
     ]],
     ['#/einstellungen', 'Einstellungen', 'settings'],
   ];
@@ -261,7 +264,10 @@ function viewHome() {
   const recent = docs.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
   shell(`
   ${pageHead('Übersicht')}
-  <a class="tile tile-wide" data-k="bericht" href="#/bericht/neu">${icon('bericht')}<span>Regiebericht – unterwegs beim Kunden</span></a>
+  <div class="hero-row">
+    <a class="tile tile-wide" data-k="bericht" href="#/bericht/neu">${icon('bericht')}<span>Regiebericht – unterwegs beim Kunden</span></a>
+    <button type="button" class="tile tile-memo" data-k="merkliste" id="memoQuick">${icon('merkliste')}<span>Notiz / Bestellung${memoOpen(companyId) ? `<small>${memoOpen(companyId)} offen auf der Merkliste</small>` : ''}</span></button>
+  </div>
   <div class="tiles">
     <a class="tile" data-k="kunden" href="#/kunde/neu">${icon('kunden')}<span>+ Neuer Kunde</span></a>
     <a class="tile" data-k="angebot" href="#/beleg/neu/angebot">${icon('angebot')}<span>+ Neues Angebot</span></a>
@@ -279,6 +285,7 @@ function viewHome() {
   <h2 class="sec">Zuletzt bearbeitet</h2>
   ${docList(recent)}`, 'home');
   wireDashboard($('main'));
+  $('#memoQuick').onclick = () => quickMemo({ companyId, toast, onSaved: () => viewHome() });
 }
 
 // ---------- Aufgaben ----------
@@ -294,6 +301,14 @@ function jobsCard() {
   }).join('');
   return `<section class="dash-card"><div class="dc-head"><h3>Laufende Aufträge · ${open} offene ${open === 1 ? 'Aufgabe' : 'Aufgaben'}</h3><a class="link" href="#/aufgaben">Alle Aufgaben →</a></div>
     <div class="hbars">${rows}</div>${jobs.length > 6 ? `<p class="muted"><small>und ${jobs.length - 6} weitere</small></p>` : ''}</section>`;
+}
+
+function viewMemos() {
+  memoPage({ companyId, shell, pageHead, toast, rerender: () => {
+    const y = scrollY;
+    viewMemos();
+    scrollTo(0, y);
+  } });
 }
 
 function viewTasks() {
@@ -1897,6 +1912,7 @@ async function route() {
     case 'einstellungen': return viewSettings();
     case 'vorlagen': return viewTemplates();
     case 'aufgaben': return viewTasks();
+    case 'merkliste': return viewMemos();
     case 'berichte': return reports().viewReports(params);
     case 'monteure': return reports().viewWorkers();
     case 'bericht': return reports().viewReport(parts[1] || 'neu');

@@ -572,3 +572,29 @@ h2.sec { margin: 0 0 0.7rem; }
 .tk-job .tk-prog { margin: 0; height: 10px; }
 .tk-group .segs button.seg, .toolbar .segs button.seg { border: 0; background: transparent; font: inherit; font-size: 0.92rem; cursor: pointer; min-height: 0; }
 .toolbar .segs button.seg.on { background: var(--card); }
+
+/* ===== Merkliste ===== */
+:root { --c-merkliste: #a16207; --memo-bg: #facc15; }
+:root[data-theme="dark"] { --c-merkliste: #facc15; --memo-bg: #facc15; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-merkliste: #facc15; } }
+[data-colors="farbig"] [data-k="merkliste"] { --k: var(--c-merkliste); }
+.hero-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem; margin-bottom: 1rem; }
+.hero-row .tile-wide { margin-bottom: 0; }
+.tile-memo { border: 0; font: inherit; font-weight: 700; font-size: 1.15rem; cursor: pointer; min-height: 84px; }
+.tile-memo span { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
+.tile-memo small { font-size: 0.8rem; font-weight: 600; opacity: 0.85; }
+[data-colors="farbig"] .tile.tile-memo[data-k] { background: var(--memo-bg); color: #1d2330; }
+[data-colors="farbig"] .tile.tile-memo[data-k]:hover { background: #fde047; }
+.memo-sheet textarea { width: 100%; font-size: 1.05rem; }
+.memo-cats { margin-bottom: 0.6rem; }
+.memo-cats button.seg, .toolbar .segs button.seg { border: 0; background: transparent; font: inherit; font-size: 0.95rem; cursor: pointer; min-height: 0; padding: 0.5rem 1.1rem; }
+.memo-cats button.seg.on { background: var(--card); font-weight: 600; box-shadow: 0 1px 2px rgba(16,24,40,0.08), 0 0 0 1px var(--line); }
+.memo-list { padding: 0.2rem 1rem; }
+.memo-at { white-space: nowrap; font-size: 0.75rem; }
+#memoMic.rec { background: #fee2e2; color: #991b1b; }
+@media (max-width: 520px) {
+  .hero-row { grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+  .hero-row .tile { font-size: 0.98rem; padding: 0.8rem; flex-direction: column; gap: 0.4rem; text-align: center; }
+  .tile-memo span { align-items: center; text-align: center; }
+  .memo-at { display: none; }
+}
