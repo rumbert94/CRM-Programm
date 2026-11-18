@@ -1,0 +1,31 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+  p.on('dialog', (d) => d.accept());
+  await p.goto('http://localhost:4173/'); await p.click('text=Firma anlegen');
+  await p.fill('[name=name]', 'Muster GmbH'); await p.fill('[name=street]', 'Werkweg 3'); await p.fill('[name=zip]', '16515'); await p.fill('[name=city]', 'Oranienburg');
+  await p.click('button:has-text("Speichern")'); await p.waitForURL(/einstellungen/);
+  await p.click('nav >> text=Kunden'); await p.click('text=+ Neuer Kunde'); await p.fill('[name=name]', 'Erika Muster'); await p.fill('[name=city]', 'Berlin');
+  await p.click('form#f button:has-text("Speichern")'); await p.waitForSelector('#nf');
+  await p.click('text=+ Angebot');
+  await p.click('#addItem'); await p.locator('[data-k=desc]').fill('Wartung'); await p.locator('[data-k=price]').fill('189');
+  await p.waitForTimeout(1500);
+  const before = await p.inputValue('[name=paymentTerms]');
+  const url = p.url();
+  // Einstellungen ändern
+  await p.click('nav >> text=Einstellungen'); await p.click('.list a:has-text("Muster GmbH")'); await p.waitForSelector('#addCt', { state: 'attached' });
+  await p.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
+  await p.locator('[name="textsKinds.paymentTerms.angebot"] + span').click();
+  await p.fill('[name="texts.extraText"]', 'ZUSATZTEXT-XYZ');
+  await p.click('#addCt'); await p.fill('.ct-label', 'Gewährleistung'); await p.fill('.ct-text', 'EIGENTEXT-ABC');
+  await p.click('button:has-text("Speichern")'); await p.waitForURL(/einstellungen/);
+  await p.goto(url); await p.waitForSelector('[name=paymentTerms]'); await p.waitForTimeout(1500);
+  const after = await p.inputValue('[name=paymentTerms]');
+  const hint = await p.textContent('.editor p.muted.small.full').catch(() => null);
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#pdfDl')]);
+  await dl.saveAs('test/out/e2e7.pdf');
+  console.log({ before, after, hint, errs });
+  await b.close();
+})();

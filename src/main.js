@@ -427,8 +427,28 @@ function convert(src, kind) {
   });
 }
 
+// Entwürfe: Zahlungsbedingungen/Schlusstext an die aktuellen Einstellungen angleichen,
+// solange sie nicht im Beleg von Hand geändert wurden
+function stdTextsFor(d, c) {
+  return {
+    paymentTerms: d.kind === 'rechnung' ? paymentText(c, d.dueDate, 'rechnung') : paymentText(c, null, d.kind),
+    outro: textForKind(c, 'outro', d.kind) ? c.texts?.outro ?? 'Mit freundlichen Grüßen' : '',
+  };
+}
+function refreshStdTexts(d, c) {
+  if (d.locked || d.isCreditNote) return;
+  const want = stdTextsFor(d, c);
+  const auto = d.autoTexts;
+  for (const k of Object.keys(want)) {
+    const cur = d[k] || '';
+    const legacyStd = !auto && (k === 'outro' ? [c.texts?.outro, 'Mit freundlichen Grüßen'].includes(cur) : false);
+    if (auto ? cur === (auto[k] || '') : !cur || legacyStd) d[k] = want[k];
+  }
+  d.autoTexts = want;
+}
+
 async function viewDoc(id, params, kindForNew) {
-  const c = company();
+  let c = company();
   let d;
   if (id === 'neu') {
     d = newDoc(kindForNew, { customerId: params.get('kunde') || '' });
@@ -438,8 +458,10 @@ async function viewDoc(id, params, kindForNew) {
     if (d.companyId !== companyId) {
       companyId = d.companyId;
       localStorage.setItem('companyId', companyId);
+      c = company();
     }
   }
+  refreshStdTexts(d, c);
   const isNew = id === 'neu';
   const locked = !!d.locked;
   const customers = db.all('customer', (k) => k.companyId === companyId).sort((a, b) => a.name.localeCompare(b.name));
@@ -485,6 +507,13 @@ async function viewDoc(id, params, kindForNew) {
   <form id="f2" class="grid">
     ${field('Zahlungsbedingungen', 'paymentTerms', d.paymentTerms, { type: 'textarea', full: true, attrs: dis })}
     ${field('Schlusstext', 'outro', d.outro, { type: 'textarea', full: true, attrs: dis })}
+    ${(() => {
+      const kOn = (key, def) => c.textsOn?.[key] !== false && (c.textsKinds?.[key]?.[d.kind] ?? def.includes(d.kind));
+      const extra = [];
+      if (c.texts?.extraText && kOn('extraText', ['angebot', 'auftrag', 'rechnung'])) extra.push('Zusatztext');
+      for (const ct of c.customTexts || []) if (ct.on !== false && ct.text?.trim() && ct.kinds?.[d.kind] !== false) extra.push(ct.label || 'eigenes Textfeld');
+      return extra.length ? `<p class="muted small full">Außerdem unten auf dem Beleg (aus den <a href="#/firma/${esc(c.id)}">Firmeneinstellungen</a>): ${extra.map(esc).join(', ')}</p>` : '';
+    })()}
   </form>
 
   <div class="actions sticky">
@@ -635,7 +664,10 @@ async function viewDoc(id, params, kindForNew) {
   }
   $('[name=dueDate]')?.addEventListener('change', (e) => {
     const pt = $('[name=paymentTerms]');
-    if (pt && !locked) pt.value = paymentText(c, e.target.value, 'rechnung');
+    if (pt && !locked && pt.value === (d.autoTexts?.paymentTerms || '')) {
+      pt.value = paymentText(c, e.target.value, 'rechnung');
+      d.autoTexts = { ...d.autoTexts, paymentTerms: pt.value };
+    }
   });
 
   const customer = () => d.customerSnapshot || db.get(d.customerId);
@@ -1148,6 +1180,8 @@ async function viewCompany(id) {
     </div>
     <div class="actions sticky"><button class="btn primary">Speichern</button>
       <button type="button" class="btn" id="preview">Probe-PDF (nur Layout, keine E-Rechnung)</button>
+      <label class="btn">Firmenprofil laden<input type="file" id="profileIn" accept="application/json,.json" hidden></label>
+      ${isNew ? '' : '<button type="button" class="btn" id="profileOut">Firmenprofil sichern</button>'}
       ${isNew ? '' : '<button type="button" class="btn danger push-right" id="del">Firma löschen</button>'}</div>
   </form>`, 'settings');
 
@@ -1237,6 +1271,44 @@ async function viewCompany(id) {
     await db.put({ ...collect(), letterheadFileId: null });
     viewCompany(c.id);
   });
+  // Firmenprofil: Stammdaten, Texte, Layout und Logo als Datei übernehmen/sichern
+  const toB64 = async (blob) => {
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    return btoa(bin);
+  };
+  $('#profileIn').onchange = async (e) => {
+    try {
+      const prof = JSON.parse(await e.target.files[0].text());
+      if (prof.app !== 'handwerk-crm-profile' || !prof.company) throw new Error('Keine gültige Firmenprofil-Datei.');
+      if (!isNew && !confirm(`Daten aus „${prof.company.name}“ in diese Firma übernehmen? Vorhandene Einstellungen werden überschrieben.`)) return;
+      const { id, type, updatedAt, _dirty, deleted, ...fields } = prof.company;
+      const merged = { ...collect(), ...fields };
+      if (prof.logo?.b64) {
+        const bin = atob(prof.logo.b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        const f = await db.putFile({ name: prof.logo.name || 'logo.png', mime: prof.logo.mime || 'image/png', data: new Blob([arr], { type: prof.logo.mime || 'image/png' }) });
+        merged.logoFileId = f.id;
+      }
+      const saved = await db.put(merged);
+      companyId = saved.id;
+      localStorage.setItem('companyId', companyId);
+      toast('Firmenprofil übernommen');
+      history.replaceState(null, '', '#/firma/' + saved.id);
+      viewCompany(saved.id);
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+  $('#profileOut') && ($('#profileOut').onclick = async () => {
+    const cc = collect();
+    const logo = cc.logoFileId ? await db.getFile(cc.logoFileId) : null;
+    const prof = { app: 'handwerk-crm-profile', version: 1, company: cc, logo: logo ? { name: logo.name, mime: logo.mime, b64: await toB64(logo.data) } : null };
+    download(JSON.stringify(prof, null, 1), `Firmenprofil ${safeFile(cc.name)}.json`, 'application/json');
+  });
+
   $('#preview').onclick = async () => {
     const cc = collect();
     const demo = {

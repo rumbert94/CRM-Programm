@@ -1,0 +1,24 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+  p.on('dialog', (d) => d.accept());
+  await p.goto('http://localhost:4173/'); await p.click('text=Firma anlegen');
+  await p.fill('[name=name]', 'Muster GmbH'); await p.fill('[name=street]', 'Werkweg 3'); await p.fill('[name=zip]', '16515'); await p.fill('[name=city]', 'Oranienburg');
+  await p.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
+  await p.fill('[name="texts.extraText"]', 'ZUSATZTEXT-XYZ');
+  await p.click('#addCt'); await p.fill('.ct-label', 'Gewaehr'); await p.fill('.ct-text', 'EIGENTEXT-ABC');
+  await p.click('button:has-text("Speichern")'); await p.waitForURL(/einstellungen/);
+  const comp = await p.evaluate(async () => (await import('/src/db.js')).all ? null : null).catch(() => null);
+  await p.click('nav >> text=Kunden'); await p.click('text=+ Neuer Kunde'); await p.fill('[name=name]', 'Erika Muster'); await p.fill('[name=city]', 'Berlin');
+  await p.click('form#f button:has-text("Speichern")'); await p.waitForSelector('#nf');
+  await p.click('text=+ Angebot');
+  await p.click('#addItem'); await p.locator('[data-k=desc]').fill('Wartung'); await p.locator('[data-k=price]').fill('189');
+  await p.waitForTimeout(2500);
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#pdfDl')]);
+  await dl.saveAs('test/out/e2e6.pdf');
+  await p.screenshot({ path: 'test/shots/e2e6.png' });
+  console.log({ errs });
+  await b.close();
+})();
