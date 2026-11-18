@@ -539,3 +539,36 @@ h2.sec { margin: 0 0 0.7rem; }
   .mc-bars { padding: 0 8%; gap: 1px; }
   .mc-col small { font-size: 0.62rem; }
 }
+
+/* ===== Aufgaben ===== */
+:root { --c-aufgaben: #be185d; }
+:root[data-theme="dark"] { --c-aufgaben: #f472b6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-aufgaben: #f472b6; } }
+[data-colors="farbig"] [data-k="aufgaben"] { --k: var(--c-aufgaben); }
+.tk-box { margin: 1.4rem 0; }
+.tk-box h2 { margin: 0; }
+.tk-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.tk-prog { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; margin: 0.3rem 0 0.6rem; }
+.tk-prog span { display: block; height: 100%; border-radius: 4px; background: var(--dv-cur, #15803d); transition: width 0.25s; }
+.tk-list { list-style: none; margin: 0; padding: 0; }
+.tk-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid var(--line); }
+.tk-item:last-child { border-bottom: 0; }
+.tk-check { display: inline-flex; padding: 0.3rem; cursor: pointer; }
+.tk-check input { width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--dv-cur, #15803d); cursor: pointer; }
+.tk-item .tk-text { flex: 1; min-width: 0; }
+.tk-item input.tk-text { border: 1px solid transparent; background: transparent; padding: 0.35rem 0.5rem; min-height: 40px; }
+.tk-item input.tk-text:hover, .tk-item input.tk-text:focus { border-color: var(--line); background: var(--card); }
+.tk-item.done .tk-text { text-decoration: line-through; color: var(--muted); }
+.tk-add { display: flex; gap: 0.5rem; margin: 0.6rem 0; }
+.tk-add input { flex: 1; }
+.tk-sug { list-style: none; padding: 0; margin: 0.5rem 0; }
+.tk-sug li { padding: 0.35rem 0; border-bottom: 1px solid var(--line); }
+.tk-sug input { width: 18px; height: 18px; min-height: 0; margin-right: 0.4rem; vertical-align: -3px; }
+.tk-group .tk-prog { margin: 0; border-radius: 0; height: 5px; }
+.tk-group .tk-list { padding: 0.2rem 1.1rem 0.4rem; }
+.tk-empty { padding: 0.8rem 1.1rem; margin: 0; }
+.tk-job { display: block; text-decoration: none; color: var(--text); border-radius: 6px; padding: 0.15rem 0.25rem; margin: -0.15rem -0.25rem; }
+.tk-job:hover { background: color-mix(in srgb, var(--soft) 80%, transparent); }
+.tk-job .tk-prog { margin: 0; height: 10px; }
+.tk-group .segs button.seg, .toolbar .segs button.seg { border: 0; background: transparent; font: inherit; font-size: 0.92rem; cursor: pointer; min-height: 0; }
+.toolbar .segs button.seg.on { background: var(--card); }

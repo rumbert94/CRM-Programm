@@ -1,7 +1,7 @@
 // KI-Assistent: Positionen für Angebote/Rechnungen aus einer Beschreibung vorschlagen.
 // Der API-Schlüssel liegt nur im Browser dieses Geräts (localStorage), nie im Code oder in der Cloud-Synchronisation.
 import Anthropic from '@anthropic-ai/sdk';
-import { UNITS } from './util.js';
+import { UNITS, unitLabel } from './util.js';
 import { getAiKey } from './ai-key.js';
 
 const SCHEMA = {
@@ -56,6 +56,13 @@ Vorlagen des Betriebs (JSON):
 ${JSON.stringify(tpl)}`;
   const user = `${customer?.name ? `Kunde: ${customer.name}\n` : ''}Beschreibung:\n${text}`;
 
+  const data = await askJson(client, system, user, SCHEMA);
+  const byId = new Map(templates.map((a) => [a.id, a]));
+  data.positions = data.positions.map((p) => ({ ...p, template: p.templateId ? byId.get(p.templateId) || null : null }));
+  return data;
+}
+
+async function askJson(client, system, user, schema) {
   const stream = client.beta.messages.stream({
     model: 'claude-opus-5-5',
     max_tokens: 16000,
@@ -63,7 +70,7 @@ ${JSON.stringify(tpl)}`;
     fallbacks: 'default',
     system,
     messages: [{ role: 'user', content: user }],
-    output_config: { format: { type: 'json_schema', schema: SCHEMA } },
+    output_config: { format: { type: 'json_schema', schema } },
   });
   let msg;
   try {
@@ -80,8 +87,30 @@ ${JSON.stringify(tpl)}`;
   if (msg.stop_reason === 'max_tokens') throw new Error('Die Antwort war zu lang. Bitte die Beschreibung aufteilen.');
   const out = msg.content.find((b) => b.type === 'text')?.text;
   if (!out) throw new Error('Keine Antwort von der KI erhalten.');
-  const data = JSON.parse(out);
-  const byId = new Map(templates.map((a) => [a.id, a]));
-  data.positions = data.positions.map((p) => ({ ...p, template: p.templateId ? byId.get(p.templateId) || null : null }));
-  return data;
+  return JSON.parse(out);
+}
+
+// Aufgabenliste für einen Auftrag aus Betreff und Positionen
+const TASK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['tasks'],
+  properties: { tasks: { type: 'array', items: { type: 'string', description: 'Eine konkrete Aufgabe, kurz, mit Verb' } } },
+};
+export async function suggestTasks({ doc, company, customer, existing = [] }) {
+  const apiKey = getAiKey();
+  if (!apiKey) throw new Error('Kein API-Schlüssel hinterlegt (Einstellungen → KI-Assistent).');
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  const items = (doc.items || [])
+    .filter((i) => i.type !== 'title')
+    .map((i) => `- ${i.qty || ''} ${i.unit ? unitLabel(i.unit) : ''} ${[i.title, i.desc].filter(Boolean).join(': ')}`.trim())
+    .join('\n');
+  const system = `Du planst für einen Handwerksbetrieb (${company.name || 'Gebäudetechnik'}) die Abarbeitung eines Auftrags.
+Erstelle eine praktische To-do-Liste in der Reihenfolge, in der die Arbeit abläuft: Vorbereitung (z. B. Aufmaß, Material bestellen, Termin mit dem Kunden abstimmen), Ausführung (je Leistung ein Schritt, gleichartige zusammenfassen), Abschluss (z. B. Prüfung/Abnahme, Baustelle räumen, Regiebericht/Dokumentation, Rechnung schreiben).
+- 5 bis 15 Aufgaben, jede kurz (höchstens 10 Wörter), auf Deutsch, mit Verb.
+- Nur was zum Auftrag passt; nichts erfinden, was nicht naheliegt.
+- Bereits vorhandene Aufgaben nicht wiederholen.`;
+  const user = `${customer?.name ? `Kunde: ${customer.name}\n` : ''}${doc.subject ? `Betreff/Bauvorhaben: ${doc.subject}\n` : ''}Positionen:\n${items || '(keine)'}${existing.length ? `\n\nSchon vorhandene Aufgaben:\n${existing.map((t) => '- ' + t).join('\n')}` : ''}`;
+  const data = await askJson(client, system, user, TASK_SCHEMA);
+  return data.tasks.map((t) => t.trim()).filter(Boolean);
 }

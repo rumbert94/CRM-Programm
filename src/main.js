@@ -6,6 +6,7 @@ import { buildCII, checkEInvoice } from './einvoice.js';
 import { dashboardHtml, wireDashboard } from './dashboard.js';
 import { initReports, REGIE_LEGAL_DEFAULT, TRAVEL } from './report.js';
 import { getAiKey, setAiKey } from './ai-key.js';
+import { taskBoxHtml, wireTaskBox, runningJobs, progress, progressBar, toggleTask, jobItemRow } from './tasks.js';
 import {
   LAYOUT_DEFAULTS, OLD_PREFIXES, docTitle, shortTitle, round2, unitLabel, numberPrefix, docFileName, numberItems, esc, uid, eur, fmtDate, fmtDateTime, today, addDays, calcTotals, parseNum, UNITS, KINDS, STATUS, debounce, download, safeFile, fmtNum,
 } from './util.js';
@@ -130,6 +131,7 @@ const ICON_PATHS = {
   rechnung: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   chevron: '<path d="m9 6 6 6-6 6"/>',
+  aufgaben: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 5"/><path d="m3.5 12 1.2 1.2L7 11"/><path d="m3.5 18 1.2 1.2L7 17"/>',
   monteure: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
   bericht: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -179,6 +181,9 @@ function shell(content, active = '') {
       ['#/belege/auftrag', 'Aufträge', 'auftrag'],
       ['#/berichte', 'Regieberichte', 'bericht'],
       ['#/belege/rechnung', 'Rechnungen', 'rechnung'],
+    ]],
+    ['Projekte', [
+      ['#/aufgaben', 'Aufgaben', 'aufgaben'],
     ]],
     ['#/einstellungen', 'Einstellungen', 'settings'],
   ];
@@ -270,9 +275,57 @@ function viewHome() {
     <a class="stat" data-k="auftrag" href="#/belege/auftrag"><span>Laufende Aufträge</span><b>${eur(sum(auftraege))}</b><small>${auftraege.length} ${auftraege.length === 1 ? 'Auftrag' : 'Aufträge'}</small></a>
   </div>
   ${dashboardHtml(docs, c, customerName)}
+  ${jobsCard()}
   <h2 class="sec">Zuletzt bearbeitet</h2>
   ${docList(recent)}`, 'home');
   wireDashboard($('main'));
+}
+
+// ---------- Aufgaben ----------
+const jobName = (d) => `Auftrag${d.number ? ' ' + d.number : ''} · ${d.customerSnapshot?.name || customerName(d.customerId) || 'ohne Kunde'}`;
+function jobsCard() {
+  const jobs = runningJobs(companyId);
+  if (!jobs.length) return '';
+  const withTasks = jobs.filter((j) => j.items.length);
+  const open = withTasks.reduce((s, j) => s + progress(j.items).open, 0);
+  const rows = jobs.slice(0, 6).map((j) => {
+    const p = progress(j.items);
+    return `<a class="tk-job" href="#/aufgaben"><div class="hb-lbl"><span>${esc(jobName(j.d))}</span><b>${p.n ? `${p.done}/${p.n} · ${p.pct} %` : '<span class="muted">keine Aufgaben</span>'}</b></div>${progressBar(p)}</a>`;
+  }).join('');
+  return `<section class="dash-card"><div class="dc-head"><h3>Laufende Aufträge · ${open} offene ${open === 1 ? 'Aufgabe' : 'Aufgaben'}</h3><a class="link" href="#/aufgaben">Alle Aufgaben →</a></div>
+    <div class="hbars">${rows}</div>${jobs.length > 6 ? `<p class="muted"><small>und ${jobs.length - 6} weitere</small></p>` : ''}</section>`;
+}
+
+function viewTasks() {
+  const only = sessionStorage.getItem('tkOnly') !== 'alle';
+  const jobs = runningJobs(companyId);
+  const shown = only ? jobs.filter((j) => progress(j.items).open) : jobs;
+  const total = jobs.reduce((s, j) => s + progress(j.items).open, 0);
+  shell(`
+  ${pageHead('Aufgaben', '', `${total} offene ${total === 1 ? 'Aufgabe' : 'Aufgaben'} in ${jobs.length} laufenden ${jobs.length === 1 ? 'Auftrag' : 'Aufträgen'}`)}
+  <p class="muted">Aufgaben gehören immer zu einem Auftrag. Anlegen und mit KI vorschlagen lassen kannst du sie im Auftrag selbst. Hier hakst du sie schnell ab.</p>
+  <div class="toolbar"><div class="segs"><button type="button" class="seg ${only ? 'on' : ''}" data-tk-f="offen">Mit offenen Aufgaben</button><button type="button" class="seg ${only ? '' : 'on'}" data-tk-f="alle">Alle laufenden Aufträge</button></div></div>
+  ${shown.length ? shown.map((j) => {
+    const p = progress(j.items);
+    return `<section class="group tk-group" data-doc="${j.d.id}">
+      <div class="group-head"><div class="gh-date"><b>${esc(jobName(j.d))}</b>${j.d.subject ? `<small>${esc(j.d.subject.split('\n')[0])}</small>` : ''}</div>
+        <div class="gh-pills"><span class="pill">${p.n ? `${p.done} von ${p.n} · ${p.pct} %` : 'keine Aufgaben'}</span><a class="link" href="#/beleg/${j.d.id}">Auftrag öffnen</a></div></div>
+      ${p.n ? progressBar(p) : ''}
+      ${p.n ? `<ul class="tk-list">${j.items.map((t) => jobItemRow(t, false)).join('')}</ul>` : `<p class="muted tk-empty">Noch keine Aufgaben. <a href="#/beleg/${j.d.id}">Im Auftrag anlegen oder mit KI vorschlagen lassen →</a></p>`}
+    </section>`;
+  }).join('') : `<p class="empty">${jobs.length ? 'Alles erledigt. 👍' : 'Keine laufenden Aufträge.'}</p>`}
+  `, 'aufgaben');
+  $$('[data-tk-f]').forEach((b) => (b.onclick = () => {
+    sessionStorage.setItem('tkOnly', b.dataset.tkF);
+    viewTasks();
+  }));
+  $$('.tk-group [data-tk-done]').forEach((cb) => (cb.onchange = async () => {
+    const docId = cb.closest('[data-doc]').dataset.doc;
+    await toggleTask(docId, cb.closest('[data-tid]').dataset.tid, cb.checked);
+    const y = scrollY;
+    viewTasks();
+    scrollTo(0, y);
+  }));
 }
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
@@ -624,6 +677,7 @@ async function viewDoc(id, params, kindForNew) {
   <div id="totals" class="totals"></div>
   ${d.kind === 'rechnung' && d.invoiceType === 'schluss' ? `<h2>Abzuziehende Abschlagsrechnungen</h2><div id="deductions"></div>` : ''}
   ${d.kind !== 'rechnung' ? abschlagOverview(d) : ''}
+  ${d.kind === 'auftrag' ? taskBoxHtml(d) : ''}
 
   <form id="f2" class="grid">
     ${field('Zahlungsbedingungen', 'paymentTerms', d.paymentTerms, { type: 'textarea', full: true, attrs: dis })}
@@ -799,6 +853,13 @@ async function viewDoc(id, params, kindForNew) {
 
   const customer = () => d.customerSnapshot || db.get(d.customerId);
   const fileBase = () => safeFile(docFileName(d));
+  const renderTasks = () => {
+    const b = $('#tkBox');
+    if (!b) return;
+    b.outerHTML = taskBoxHtml(d);
+    wireTaskBox(d, { company: c, customer: customer(), toast, rerender: renderTasks });
+  };
+  if (d.kind === 'auftrag') wireTaskBox(d, { company: c, customer: customer(), toast, rerender: renderTasks });
   $('#serviceMode')?.addEventListener('change', (e) => {
     const p = e.target.value === 'period';
     $$('.svc-period').forEach((x) => (x.hidden = !p));
@@ -1835,6 +1896,7 @@ async function route() {
     case 'firma': return viewCompany(parts[1]);
     case 'einstellungen': return viewSettings();
     case 'vorlagen': return viewTemplates();
+    case 'aufgaben': return viewTasks();
     case 'berichte': return reports().viewReports(params);
     case 'monteure': return reports().viewWorkers();
     case 'bericht': return reports().viewReport(parts[1] || 'neu');
