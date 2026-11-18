@@ -13,8 +13,21 @@
   --radius: 10px;
   color-scheme: light;
 }
+:root[data-theme="dark"] {
+  --bg: #12161c;
+  --card: #1b2129;
+  --text: #e6e9ee;
+  --muted: #98a2b3;
+  --line: #2d3540;
+  --primary: #4a8fd1;
+  --primary-text: #0b1520;
+  --danger: #f97066;
+  --ok: #47cd89;
+  --warn: #fdb022;
+  color-scheme: dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #12161c;
     --card: #1b2129;
     --text: #e6e9ee;
@@ -141,3 +154,17 @@ summary { cursor: pointer; font-weight: 600; }
 @media (min-width: 700px) { .overlay { align-items: center; } .sheet { border-radius: 14px; } }
 .sheet h2 { margin: 0.3rem 0; }
 [hidden] { display: none !important; }
+
+.theme-btn { background: rgba(255,255,255,0.15); color: inherit; border: 0; border-radius: 8px; padding: 0.4rem 0.6rem; font: inherit; cursor: pointer; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.switch { position: relative; display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--text); font-size: 0.85rem; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; }
+.switch .track { width: 44px; height: 26px; border-radius: 13px; background: var(--line); position: relative; transition: background 0.2s; flex: none; }
+.switch .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: transform 0.2s; }
+.switch input:checked + .track { background: var(--ok); }
+.switch input:checked + .track::after { transform: translateX(18px); }
+.switch input:focus-visible + .track { outline: 2px solid var(--primary); outline-offset: 2px; }
+.field.off textarea { opacity: 0.45; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.3rem 0 0.8rem; font-size: 0.9rem; }
+.flow a, .flow span.cur { padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--card); border: 1px solid var(--line); text-decoration: none; }
+.flow span.cur { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }

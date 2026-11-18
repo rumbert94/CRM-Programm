@@ -8,6 +8,26 @@ import {
 } from './util.js';
 
 const app = document.getElementById('app');
+
+// Darstellung: auto / hell / dunkel (pro Gerät)
+const getTheme = () => {
+  try { return localStorage.getItem('theme') || 'auto'; } catch { return 'auto'; }
+};
+function applyTheme(t = getTheme()) {
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#12161c' : '#1f4e79');
+}
+function setTheme(t) {
+  try { localStorage.setItem('theme', t); } catch {}
+  applyTheme(t);
+}
+const isDark = () => getTheme() === 'dark' || (getTheme() === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+applyTheme();
+
+// Standardtexte: einzeln ein-/ausschaltbar
+const textOn = (c, key) => c?.textsOn?.[key] !== false;
 let companyId = localStorage.getItem('companyId') || '';
 
 // ---------- Hilfen ----------
@@ -95,6 +115,7 @@ function shell(content, active = '') {
       ${companies.map((c) => `<option value="${c.id}" ${c.id === companyId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
       <option value="__new">+ Neue Firma …</option>
     </select>
+    <button class="theme-btn" id="themeBtn" title="Hell / Dunkel umschalten" aria-label="Hell / Dunkel umschalten">${isDark() ? '☀' : '☾'}</button>
     <button class="sync ${esc(s.status)}" id="syncBtn" title="${esc(s.message)}">${syncIcon(s.status)}</button>
   </header>
   <nav class="tabs">${nav.map(([h, l, k]) => `<a href="${h}" class="${active === k ? 'active' : ''}">${l}</a>`).join('')}</nav>
@@ -104,6 +125,10 @@ function shell(content, active = '') {
     companyId = e.target.value;
     localStorage.setItem('companyId', companyId);
     route();
+  };
+  $('#themeBtn').onclick = (e) => {
+    setTheme(isDark() ? 'light' : 'dark');
+    e.currentTarget.textContent = isDark() ? '☀' : '☾';
   };
   $('#syncBtn').onclick = () => (sync.isConnected() ? sync.sync() : go('#/einstellungen'));
 }
@@ -134,6 +159,7 @@ function viewHome() {
   <div class="actions">
     <a class="btn primary" href="#/kunde/neu">+ Kunde</a>
     <a class="btn" href="#/beleg/neu/angebot">+ Angebot</a>
+    <a class="btn" href="#/beleg/neu/auftrag">+ Auftrag</a>
     <a class="btn" href="#/beleg/neu/rechnung">+ Rechnung</a>
   </div>
   <h2>Zuletzt bearbeitet</h2>
@@ -279,8 +305,8 @@ function newDoc(kind, fields = {}) {
     date,
     status: STATUS[kind][0],
     items: [],
-    intro: c.texts?.[kind + 'Intro'] ?? defaultIntro(kind),
-    outro: c.texts?.outro ?? 'Mit freundlichen Grüßen',
+    intro: textOn(c, kind + 'Intro') ? c.texts?.[kind + 'Intro'] ?? defaultIntro(kind) : '',
+    outro: textOn(c, 'outro') ? c.texts?.outro ?? 'Mit freundlichen Grüßen' : '',
     ...fields,
   };
   if (kind === 'angebot') d.validUntil = addDays(date, c.offerValidDays || 30);
@@ -302,7 +328,32 @@ const defaultIntro = (kind) =>
   })[kind];
 
 const paymentText = (c, due) =>
-  (c.texts?.paymentTerms || 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.').replace('{FAELLIG}', fmtDate(due));
+  !textOn(c, 'paymentTerms') ? '' : (c.texts?.paymentTerms || 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.').replace('{FAELLIG}', fmtDate(due));
+
+// Belegkette: Angebot -> Auftrag -> Rechnung
+function flowHtml(d) {
+  const chain = [];
+  let cur = d;
+  const seen = new Set();
+  while (cur?.sourceId && !seen.has(cur.sourceId)) {
+    seen.add(cur.sourceId);
+    cur = db.get(cur.sourceId);
+    if (cur) chain.unshift(cur);
+  }
+  chain.push(d);
+  let next = d;
+  for (;;) {
+    const n = db.all('doc', (x) => x.sourceId === next.id && !x.isCreditNote && !String(x.subject || '').startsWith('Storno'))[0];
+    if (!n || seen.has(n.id)) break;
+    seen.add(n.id);
+    chain.push(n);
+    next = n;
+  }
+  if (chain.length < 2) return '';
+  return `<div class="flow">${chain
+    .map((x) => (x.id === d.id ? `<span class="cur">${esc(KINDS[x.kind].label)} ${esc(x.number || 'Entwurf')}</span>` : `<a href="#/beleg/${x.id}">${esc(KINDS[x.kind].label)} ${esc(x.number || 'Entwurf')}</a>`))
+    .join(' → ')}</div>`;
+}
 
 function convert(src, kind) {
   return newDoc(kind, {
@@ -339,7 +390,7 @@ async function viewDoc(id, params, kindForNew) {
   shell(`
   <div class="bar"><h1>${d.isCreditNote ? 'Storno' : kind.label} ${d.number ? 'Nr. ' + esc(d.number) : '(Entwurf)'}</h1>
     <span><span class="badge ${esc(d.status)}">${esc(d.status)}</span>${locked ? ' <span class="badge einv">✓ E-Rechnung (ZUGFeRD)</span>' : ''}</span></div>
-  ${d.sourceNumber ? `<p class="muted">Erstellt aus ${esc(d.sourceNumber)}</p>` : ''}
+  ${flowHtml(d)}
   ${locked ? `<p class="info">Diese Rechnung ist abgeschlossen und kann nicht mehr geändert werden (GoBD). Für Korrekturen bitte stornieren.</p>` : ''}
   <form id="f" class="grid">
     <label class="field"><span>Kunde *</span><select name="customerId" ${dis} required>
@@ -376,8 +427,8 @@ async function viewDoc(id, params, kindForNew) {
       ? '<button class="btn primary" id="zugferd">E-Rechnung (PDF) herunterladen</button><button class="btn" id="pdf">Ansehen</button><button class="btn" id="xrechnung">XRechnung (nur XML, für Behörden)</button>'
       : `<button class="btn" id="pdf">${d.kind === 'rechnung' ? 'Vorschau (Entwurf)' : 'PDF ansehen'}</button>`}
     ${d.kind === 'rechnung' && !d.locked ? '<button class="btn primary" id="finalize">Rechnung abschließen</button>' : ''}
-    ${d.kind === 'angebot' ? '<button class="btn" id="toAuftrag">→ Auftrag</button><button class="btn" id="toRechnung">→ Rechnung</button>' : ''}
-    ${d.kind === 'auftrag' ? '<button class="btn" id="toRechnung">→ Rechnung</button>' : ''}
+    ${d.kind === 'angebot' ? '<button class="btn primary" id="toAuftrag">In Auftrag überführen →</button><button class="btn" id="toRechnung">Direkt in Rechnung →</button>' : ''}
+    ${d.kind === 'auftrag' ? '<button class="btn primary" id="toRechnung">In Rechnung überführen →</button>' : ''}
     ${!d.isCreditNote && d.kind === 'rechnung' && d.locked && d.status !== 'Storniert' ? '<button class="btn danger" id="storno">Stornieren</button>' : ''}
     ${!d.locked ? '<button class="btn danger" id="del">Löschen</button>' : ''}
     <button class="btn" id="copy">Kopieren</button>
@@ -512,6 +563,7 @@ async function viewDoc(id, params, kindForNew) {
     const n = convert(d, kind);
     await db.put(n);
     if (d.kind === 'angebot') await db.put({ ...d, status: 'Angenommen' });
+    if (d.kind === 'auftrag') await db.put({ ...d, status: 'Erledigt' });
     toast(`${KINDS[kind].label} erstellt`);
     go('#/beleg/' + n.id);
   };
@@ -603,6 +655,16 @@ function openPdf(bytes, name) {
   const w = window.open(url, '_blank');
   if (!w) download(blob, name);
   setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function textField(c, label, key, name, value, hint = '') {
+  const on = textOn(c, key);
+  return `<div class="field full ${on ? '' : 'off'}" data-textfield>
+    <div class="switch-row"><span>${esc(label)}</span>
+      <label class="switch"><input type="checkbox" name="textsOn.${key}" ${on ? 'checked' : ''}><span class="track"></span><span class="sw-label">${on ? 'ein' : 'aus'}</span></label></div>
+    <textarea name="${name}" rows="3">${esc(value)}</textarea>
+    ${hint ? `<small>${hint}</small>` : ''}
+  </div>`;
 }
 
 // ---------- Positionsvorlagen ----------
@@ -789,13 +851,14 @@ async function viewCompany(id) {
       ${select('Standard-USt.', 'defaultVat', c.defaultVat ?? 19, [{ value: 19, label: '19 %' }, { value: 7, label: '7 %' }, { value: 0, label: '0 %' }])}
     </div>
     <h2>Standardtexte</h2>
+    <p class="muted">Mit dem Schalter legst du fest, ob ein Text automatisch in neue Belege übernommen wird.</p>
     <div class="grid">
-      ${field('Einleitung Angebot', 'texts.angebotIntro', t.angebotIntro ?? defaultIntro('angebot'), { type: 'textarea', full: true })}
-      ${field('Einleitung Auftrag', 'texts.auftragIntro', t.auftragIntro ?? defaultIntro('auftrag'), { type: 'textarea', full: true })}
-      ${field('Einleitung Rechnung', 'texts.rechnungIntro', t.rechnungIntro ?? defaultIntro('rechnung'), { type: 'textarea', full: true })}
-      ${field('Zahlungsbedingungen', 'texts.paymentTerms', t.paymentTerms ?? 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.', { type: 'textarea', full: true, hint: '{FAELLIG} wird durch das Fälligkeitsdatum ersetzt' })}
-      ${field('Schlusstext', 'texts.outro', t.outro ?? 'Mit freundlichen Grüßen', { type: 'textarea', full: true })}
-      ${field('Hinweis auf Rechnungen an Privatkunden', 'privateNotice', c.privateNotice ?? 'Bei Leistungen an einem Grundstück: Sie sind gesetzlich verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b UStG).', { type: 'textarea', full: true })}
+      ${textField(c, 'Einleitung Angebot', 'angebotIntro', 'texts.angebotIntro', t.angebotIntro ?? defaultIntro('angebot'))}
+      ${textField(c, 'Einleitung Auftrag', 'auftragIntro', 'texts.auftragIntro', t.auftragIntro ?? defaultIntro('auftrag'))}
+      ${textField(c, 'Einleitung Rechnung', 'rechnungIntro', 'texts.rechnungIntro', t.rechnungIntro ?? defaultIntro('rechnung'))}
+      ${textField(c, 'Zahlungsbedingungen', 'paymentTerms', 'texts.paymentTerms', t.paymentTerms ?? 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.', '{FAELLIG} wird durch das Fälligkeitsdatum ersetzt')}
+      ${textField(c, 'Schlusstext', 'outro', 'texts.outro', t.outro ?? 'Mit freundlichen Grüßen')}
+      ${textField(c, 'Hinweis auf Rechnungen an Privatkunden', 'privateNotice', 'privateNotice', c.privateNotice ?? 'Bei Leistungen an einem Grundstück: Sie sind gesetzlich verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b UStG).', 'wird nur gedruckt, wenn der Kunde keine USt-IdNr. hat')}
     </div>
     <div class="actions sticky"><button class="btn primary">Speichern</button>
       <button type="button" class="btn" id="preview">Probe-PDF (nur Layout, keine E-Rechnung)</button>
@@ -804,7 +867,7 @@ async function viewCompany(id) {
 
   const collect = () => {
     const data = formData($('#f'));
-    const out = { ...c, layout2: { ...L }, numbering: structuredClone(c.numbering || {}), texts: { ...(c.texts || {}) } };
+    const out = { ...c, layout2: { ...L }, numbering: structuredClone(c.numbering || {}), texts: { ...(c.texts || {}) }, textsOn: { ...(c.textsOn || {}) } };
     for (const [k, v] of Object.entries(data)) {
       const parts = k.split('.');
       let o = out;
@@ -848,6 +911,12 @@ async function viewCompany(id) {
     toast('Briefkopf gespeichert');
     viewCompany(saved.id);
   };
+  $$('[data-textfield] .switch input').forEach((cb) =>
+    cb.addEventListener('change', () => {
+      cb.closest('[data-textfield]').classList.toggle('off', !cb.checked);
+      cb.parentElement.querySelector('.sw-label').textContent = cb.checked ? 'ein' : 'aus';
+    })
+  );
   $('#logoFile').onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -918,6 +987,9 @@ async function viewSettings() {
     <form id="cid" class="grid">${field('Client-ID', 'clientId', clientId, { full: true })}<div class="actions full"><button class="btn">Speichern</button></div></form>
   </details>
 
+  <h2>Darstellung</h2>
+  <div class="grid">${select('Farbschema (dieses Gerät)', 'theme', getTheme(), [{ value: 'auto', label: 'Automatisch (wie Gerät)' }, { value: 'light', label: 'Hell' }, { value: 'dark', label: 'Dunkel' }], 'id="themeSel"')}</div>
+
   <h2>Datensicherung</h2>
   <p class="muted">Zusätzlich zu OneDrive kannst du jederzeit eine komplette Sicherungsdatei herunterladen oder einspielen.</p>
   <div class="actions"><button class="btn" id="export">Sicherung herunterladen</button>
@@ -925,6 +997,10 @@ async function viewSettings() {
   <p class="muted small">Version ${__APP_VERSION__}</p>
   `, 'settings');
 
+  $('#themeSel').onchange = (e) => {
+    setTheme(e.target.value);
+    viewSettings();
+  };
   $('#cid').onsubmit = async (e) => {
     e.preventDefault();
     await db.setMeta('msClientId', e.target.clientId.value.trim());

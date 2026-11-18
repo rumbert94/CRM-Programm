@@ -338,7 +338,7 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
     para(doc.outro);
     y -= 8;
   }
-  if (doc.kind === 'rechnung' && company.privateNotice && !c.vatId) para(company.privateNotice);
+  if (doc.kind === 'rechnung' && company.privateNotice && company.textsOn?.privateNotice !== false && !c.vatId) para(company.privateNotice);
 
   // Seitenzahlen
   if (pages.length > 1)
