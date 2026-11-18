@@ -415,3 +415,63 @@ h2.sec { margin: 0 0 0.7rem; }
 .gh-pills .link { font-size: 0.88rem; }
 .tpl-segs button.seg { border: 0; background: transparent; font: inherit; font-size: 0.92rem; cursor: pointer; min-height: 0; }
 .tpl-segs button.seg.on { background: var(--card); }
+
+/* ===== Farbschema „Farbig“ (umschaltbar in den Firmen-Einstellungen; „Klassisch“ = alles oben) ===== */
+:root {
+  --c-home: #334e9e; --c-kunden: #2563eb; --c-vorlagen: #7c3aed; --c-monteure: #0e7490; --c-angebot: #b45309;
+  --c-auftrag: #0f766e; --c-bericht: #4338ca; --c-rechnung: #15803d; --c-ueberfaellig: #b42318; --c-settings: #475569;
+}
+:root[data-theme="dark"] {
+  --c-home: #93a8e8; --c-kunden: #7aa7ff; --c-vorlagen: #b49cff; --c-monteure: #5cc8dd; --c-angebot: #f4b860;
+  --c-auftrag: #4fd1c0; --c-bericht: #a5a8ff; --c-rechnung: #5fd68c; --c-ueberfaellig: #f97066; --c-settings: #a3afc2;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --c-home: #93a8e8; --c-kunden: #7aa7ff; --c-vorlagen: #b49cff; --c-monteure: #5cc8dd; --c-angebot: #f4b860;
+  --c-auftrag: #4fd1c0; --c-bericht: #a5a8ff; --c-rechnung: #5fd68c; --c-ueberfaellig: #f97066; --c-settings: #a3afc2;
+} }
+[data-colors="farbig"] [data-k="home"] { --k: var(--c-home); }
+[data-colors="farbig"] [data-k="kunden"] { --k: var(--c-kunden); }
+[data-colors="farbig"] [data-k="vorlagen"] { --k: var(--c-vorlagen); }
+[data-colors="farbig"] [data-k="monteure"] { --k: var(--c-monteure); }
+[data-colors="farbig"] [data-k="angebot"] { --k: var(--c-angebot); }
+[data-colors="farbig"] [data-k="auftrag"] { --k: var(--c-auftrag); }
+[data-colors="farbig"] [data-k="bericht"] { --k: var(--c-bericht); }
+[data-colors="farbig"] [data-k="rechnung"] { --k: var(--c-rechnung); }
+[data-colors="farbig"] [data-k="ueberfaellig"] { --k: var(--c-ueberfaellig); }
+[data-colors="farbig"] [data-k="settings"] { --k: var(--c-settings); }
+
+/* Seitenleiste: farbige Symbole, aktiver Bereich in seiner Farbe */
+[data-colors="farbig"] nav.side { background: linear-gradient(180deg, color-mix(in srgb, var(--c-home) 9%, var(--bg)) 0%, var(--bg) 60%); }
+[data-colors="farbig"] nav.side a[data-k] .ic { color: var(--k); }
+[data-colors="farbig"] nav.side a[data-k]:hover { background: color-mix(in srgb, var(--k) 10%, transparent); }
+[data-colors="farbig"] nav.side a[data-k].active { background: color-mix(in srgb, var(--k) 13%, var(--card)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--k) 25%, transparent); }
+[data-colors="farbig"] nav.side a[data-k].active::before { background: var(--k); }
+[data-colors="farbig"] nav.side a[data-k].active .ic { color: var(--k); }
+[data-colors="farbig"] nav.side .nav-group { color: color-mix(in srgb, var(--c-home) 70%, var(--muted)); font-weight: 700; }
+[data-colors="farbig"] nav.side .side-company .avatar { background: var(--c-home); border-color: var(--c-home); color: #fff; }
+
+/* Startseite: Kacheln je Bereich */
+[data-colors="farbig"] .tile[data-k] { background: var(--k); color: #fff; box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--k) 70%, transparent); }
+[data-colors="farbig"] .tile[data-k]:hover { background: color-mix(in srgb, var(--k) 88%, #000); }
+[data-colors="farbig"] .tile-wide[data-k] { background: linear-gradient(120deg, #1e3a8a 0%, var(--c-bericht) 100%); }
+[data-colors="farbig"] .tile-wide[data-k]:hover { background: linear-gradient(120deg, #1a3279 0%, color-mix(in srgb, var(--c-bericht) 88%, #000) 100%); }
+:root[data-theme="dark"][data-colors="farbig"] .tile[data-k] { color: #0b0f17; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"])[data-colors="farbig"] .tile[data-k] { color: #0b0f17; } }
+[data-colors="farbig"] .stats4 .stat[data-k] { background: color-mix(in srgb, var(--k) 8%, var(--card)); border: 1px solid color-mix(in srgb, var(--k) 22%, transparent); border-left: 5px solid var(--k); }
+[data-colors="farbig"] .stats4 .stat[data-k] b { color: var(--k); }
+[data-colors="farbig"] .stats4 .stat[data-k="ueberfaellig"]:not(.warn) { --k: var(--c-settings); }
+
+/* Listen: farbige Symbole und Initialen */
+[data-colors="farbig"] .row-ic[data-k] { background: color-mix(in srgb, var(--k) 13%, transparent); color: var(--k); }
+[data-colors="farbig"] .avatar.av0 { --av: var(--c-kunden); }
+[data-colors="farbig"] .avatar.av1 { --av: var(--c-auftrag); }
+[data-colors="farbig"] .avatar.av2 { --av: var(--c-vorlagen); }
+[data-colors="farbig"] .avatar.av3 { --av: var(--c-angebot); }
+[data-colors="farbig"] .avatar.av4 { --av: var(--c-monteure); }
+[data-colors="farbig"] .avatar.av5 { --av: var(--c-rechnung); }
+[data-colors="farbig"] .avatar[class*="av"] { border-color: var(--av); color: var(--av); background: color-mix(in srgb, var(--av) 10%, transparent); }
+[data-colors="farbig"] .group-head { background: color-mix(in srgb, var(--c-home) 7%, var(--soft)); }
+[data-colors="farbig"] .page-head h1 { position: relative; }
+[data-colors="farbig"] .page-head h1::after { content: ''; display: block; width: 36px; height: 4px; border-radius: 4px; margin-top: 0.35rem; background: linear-gradient(90deg, var(--c-home), var(--c-bericht)); }
+:root[data-theme="dark"][data-colors="farbig"] .tile-wide[data-k], :root[data-theme="dark"][data-colors="farbig"] .tile-wide[data-k]:hover { background: linear-gradient(120deg, #8fa6ef 0%, var(--c-bericht) 100%); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"])[data-colors="farbig"] .tile-wide[data-k], :root:not([data-theme="light"])[data-colors="farbig"] .tile-wide[data-k]:hover { background: linear-gradient(120deg, #8fa6ef 0%, var(--c-bericht) 100%); } }

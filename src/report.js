@@ -215,7 +215,7 @@ export function initReports(ctx) {
       })
       .join('')}</div>${searchBox('q', q, 'Kunde, Nummer, Vorhaben …')}</div>
     ${list.length ? `<ul class="list">${list
-      .map((r) => `<li><a class="row" href="#/bericht/${r.id}"><span class="row-ic">${icon('bericht')}</span>${avatar(name(r))}
+      .map((r) => `<li><a class="row" href="#/bericht/${r.id}"><span class="row-ic" data-k="${'bericht'}">${icon('bericht')}</span>${avatar(name(r))}
         <div class="row-main"><b>${esc(name(r) || 'Ohne Kunde')}</b><small>Regiebericht ${esc(r.number || '(Entwurf)')} · ${esc(fmtDate(r.date))}${r.project ? ' · ' + esc(r.project) : ''}</small></div>
         <span class="badge ${esc(r.status)}">${esc(r.status)}</span><b class="amount">${fmtNum(totalHours(r))} Std</b>${icon('chevron', 'chev')}</a></li>`)
       .join('')}</ul>` : '<p class="empty">Noch keine Regieberichte.</p>'}`, 'bericht');

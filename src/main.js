@@ -142,13 +142,18 @@ const initials = (name) =>
     .slice(0, 2)
     .map((w) => w[0].toUpperCase())
     .join('') || '–';
-const avatar = (name) => `<span class="avatar">${esc(initials(name))}</span>`;
+const avatarHue = (name) => [...String(name || '')].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 997, 7) % 6;
+const avatar = (name) => `<span class="avatar av${avatarHue(name)}">${esc(initials(name))}</span>`;
 // Seitenkopf: Titel, Firma darunter, Aktionen rechts
 const pageHead = (title, actions = '', sub = company()?.name || '') =>
   `<div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p class="sub">${esc(sub)}</p>` : ''}</div>${actions ? `<div class="head-actions">${actions}</div>` : ''}</div>`;
 const searchBox = (id, value, placeholder) => `<label class="searchbox">${icon('search')}<input id="${id}" type="search" placeholder="${esc(placeholder)}" value="${esc(value)}"></label>`;
 
+function applyColors(c = company()) {
+  document.documentElement.dataset.colors = c?.uiColors === 'klassisch' ? 'klassisch' : 'farbig';
+}
 function shell(content, active = '') {
+  applyColors();
   const companies = db.all('company').sort((a, b) => a.name.localeCompare(b.name));
   const cur = company();
   const s = sync.getState();
@@ -181,7 +186,7 @@ function shell(content, active = '') {
     const cls = k === 'kunden' ? 'plain' : k === 'rechnung' && overdue ? 'alert' : '';
     return `<span class="count ${cls}">${cnt[k]}</span>`;
   };
-  const link = ([h, l, k], sub = false) => `<a href="${h}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${icon(k)}<span class="lbl">${l}</span></a>`;
+  const link = ([h, l, k], sub = false) => `<a href="${h}" data-k="${k}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${icon(k)}<span class="lbl">${l}</span></a>`;
   const navHtml = nav
     .map((n) => (Array.isArray(n[1]) ? `<div class="nav-group">${esc(n[0])}</div>${n[1].map((x) => link(x, true)).join('')}` : link(n)))
     .join('');
@@ -250,18 +255,18 @@ function viewHome() {
   const recent = docs.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
   shell(`
   ${pageHead('Übersicht')}
-  <a class="tile tile-wide" href="#/bericht/neu">${icon('bericht')}<span>Regiebericht – unterwegs beim Kunden</span></a>
+  <a class="tile tile-wide" data-k="bericht" href="#/bericht/neu">${icon('bericht')}<span>Regiebericht – unterwegs beim Kunden</span></a>
   <div class="tiles">
-    <a class="tile" href="#/kunde/neu">${icon('kunden')}<span>+ Neuer Kunde</span></a>
-    <a class="tile" href="#/beleg/neu/angebot">${icon('angebot')}<span>+ Neues Angebot</span></a>
-    <a class="tile" href="#/beleg/neu/auftrag">${icon('auftrag')}<span>+ Neuer Auftrag</span></a>
-    <a class="tile" href="#/beleg/neu/rechnung">${icon('rechnung')}<span>+ Neue Rechnung</span></a>
+    <a class="tile" data-k="kunden" href="#/kunde/neu">${icon('kunden')}<span>+ Neuer Kunde</span></a>
+    <a class="tile" data-k="angebot" href="#/beleg/neu/angebot">${icon('angebot')}<span>+ Neues Angebot</span></a>
+    <a class="tile" data-k="auftrag" href="#/beleg/neu/auftrag">${icon('auftrag')}<span>+ Neuer Auftrag</span></a>
+    <a class="tile" data-k="rechnung" href="#/beleg/neu/rechnung">${icon('rechnung')}<span>+ Neue Rechnung</span></a>
   </div>
   <div class="cards stats4">
-    <a class="stat" href="#/belege/rechnung?f=offen"><span>Offene Rechnungen</span><b>${eur(sum(offen))}</b><small>${offen.length} ${offen.length === 1 ? 'Rechnung' : 'Rechnungen'}</small></a>
-    <a class="stat ${ueberfaellig.length ? 'warn' : ''}" href="#/belege/rechnung?f=ueberfaellig"><span>Überfällig</span><b>${eur(sum(ueberfaellig))}</b><small>${ueberfaellig.length} ${ueberfaellig.length === 1 ? 'Rechnung' : 'Rechnungen'}</small></a>
-    <a class="stat" href="#/belege/angebot?f=offen"><span>Offene Angebote</span><b>${eur(sum(angebote))}</b><small>${angebote.length} ${angebote.length === 1 ? 'Angebot' : 'Angebote'}</small></a>
-    <a class="stat" href="#/belege/auftrag"><span>Laufende Aufträge</span><b>${eur(sum(auftraege))}</b><small>${auftraege.length} ${auftraege.length === 1 ? 'Auftrag' : 'Aufträge'}</small></a>
+    <a class="stat" data-k="rechnung" href="#/belege/rechnung?f=offen"><span>Offene Rechnungen</span><b>${eur(sum(offen))}</b><small>${offen.length} ${offen.length === 1 ? 'Rechnung' : 'Rechnungen'}</small></a>
+    <a class="stat ${ueberfaellig.length ? 'warn' : ''}" data-k="ueberfaellig" href="#/belege/rechnung?f=ueberfaellig"><span>Überfällig</span><b>${eur(sum(ueberfaellig))}</b><small>${ueberfaellig.length} ${ueberfaellig.length === 1 ? 'Rechnung' : 'Rechnungen'}</small></a>
+    <a class="stat" data-k="angebot" href="#/belege/angebot?f=offen"><span>Offene Angebote</span><b>${eur(sum(angebote))}</b><small>${angebote.length} ${angebote.length === 1 ? 'Angebot' : 'Angebote'}</small></a>
+    <a class="stat" data-k="auftrag" href="#/belege/auftrag"><span>Laufende Aufträge</span><b>${eur(sum(auftraege))}</b><small>${auftraege.length} ${auftraege.length === 1 ? 'Auftrag' : 'Aufträge'}</small></a>
   </div>
   <h2 class="sec">Zuletzt bearbeitet</h2>
   ${docList(recent)}`, 'home');
@@ -272,7 +277,7 @@ function docRow(d, c) {
   const overdue = d.kind === 'rechnung' && d.status === 'Versendet' && d.dueDate && d.dueDate < today();
   const cust = d.customerSnapshot?.name || customerName(d.customerId);
   return `<li><a class="row" href="#/beleg/${d.id}">
-    <span class="row-ic">${icon(d.kind)}</span>
+    <span class="row-ic" data-k="${d.kind}">${icon(d.kind)}</span>
     ${avatar(cust === '–' ? '' : cust)}
     <div class="row-main"><b>${esc(cust === '–' ? 'Ohne Kunde' : cust)}</b>
       <small>${esc(shortTitle(d))} ${esc(d.number || '(Entwurf)')}${d.subject ? ' · ' + esc(d.subject.split('\n')[0]) : ''}</small></div>
@@ -1311,7 +1316,7 @@ function viewTemplates() {
   const row = (a) =>
     sel
       ? `<li><label class="row sel-row"><input type="checkbox" data-sel="${a.id}"><div class="row-main"><b>${esc(tplLabel(a))}</b><small>${esc(a.group || 'Ohne Gruppe')}</small></div><div class="right"><b class="amount">${eur(a.price)}</b></div></label></li>`
-      : `<li><a class="row" href="javascript:void 0" data-edit="${a.id}"><span class="row-ic">${icon('vorlagen')}</span><div class="row-main"><b>${esc(tplLabel(a))}</b><small>${esc((a.title ? a.desc : '') || '').slice(0, 140)}</small></div><div class="right"><b class="amount">${eur(a.price)}</b><br><small class="muted">je ${esc(unitLabel(a.unit))}</small></div>${icon('chevron', 'chev')}</a></li>`;
+      : `<li><a class="row" href="javascript:void 0" data-edit="${a.id}"><span class="row-ic" data-k="${'vorlagen'}">${icon('vorlagen')}</span><div class="row-main"><b>${esc(tplLabel(a))}</b><small>${esc((a.title ? a.desc : '') || '').slice(0, 140)}</small></div><div class="right"><b class="amount">${eur(a.price)}</b><br><small class="muted">je ${esc(unitLabel(a.unit))}</small></div>${icon('chevron', 'chev')}</a></li>`;
   const section = ([g, arr]) => `<section class="group">
       <div class="group-head"><div class="gh-date"><b>${esc(g || 'Ohne Gruppe')}</b></div>
         <div class="gh-pills"><span class="pill">${arr.length} ${arr.length === 1 ? 'Vorlage' : 'Vorlagen'}</span>${g && !sel ? `<button type="button" class="link" data-ren="${esc(g)}">Umbenennen</button><button type="button" class="link danger" data-ungroup="${esc(g)}">Auflösen</button>` : ''}</div></div>
@@ -1502,6 +1507,11 @@ async function viewCompany(id) {
       ${field('Angebot gültig (Tage)', 'offerValidDays', c.offerValidDays ?? 30, { type: 'number' })}
       ${field('Umsatzsteuersätze in %', 'vatRates', c.vatRates ?? '19; 7; 0', { hint: 'mit Semikolon getrennt, z. B. „19; 7; 0“. Bei einer Steueränderung hier anpassen und Standard-USt. neu wählen. Alte Belege behalten ihren Satz.' })}
       ${select('Standard-USt.', 'defaultVat', c.defaultVat ?? 19, vatRates(c, c.defaultVat).map((v) => ({ value: v, label: fmtNum(v) + ' %' })))}
+    </div>
+    <h2>Darstellung</h2>
+    <div class="grid">
+      ${select('Farbschema', 'uiColors', c.uiColors === 'klassisch' ? 'klassisch' : 'farbig', [{ value: 'farbig', label: 'Farbig (Bereiche in eigenen Farben)' }, { value: 'klassisch', label: 'Klassisch (ruhig, grün/grau)' }])}
+      <p class="muted full">Gilt für diese Firma auf allen Geräten. Hell/Dunkel stellst du unten links in der Seitenleiste um.</p>
     </div>
     <h2>KI-Assistent</h2>
     <div class="grid">
