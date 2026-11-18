@@ -152,7 +152,7 @@ export async function buildReportPdf(r, company, customer) {
   });
   SURCHARGE.forEach((s, i) => {
     const yy = y - 16 - i * 13;
-    check(bx[1] + 5, yy, r.surcharge === s.key);
+    check(bx[1] + 5, yy, r.surcharge === s.key || (s.key === '100s' && r.surcharge === '50s'));
     text(s.label, bx[1] + 18, yy, { size: 9 });
   });
   [['ohne', !r.dirt], ['50 %', !!r.dirt]].forEach(([l, on], i) => {

@@ -128,6 +128,7 @@ const ICON_PATHS = {
   rechnung: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   chevron: '<path d="m9 6 6 6-6 6"/>',
+  monteure: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
   bericht: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
 };
@@ -164,6 +165,7 @@ function shell(content, active = '') {
     ['Stammdaten', [
       ['#/kunden', 'Kunden', 'kunden'],
       ['#/vorlagen', 'Vorlagen', 'vorlagen'],
+      ['#/monteure', 'Monteure', 'monteure'],
     ]],
     ['Verkauf', [
       ['#/belege/angebot', 'Angebote', 'angebot'],
@@ -1288,7 +1290,7 @@ async function viewCompany(id) {
     </div>
     <h2>Regiebericht</h2>
     <div class="grid">
-      ${field('Stundensatz Monteur (netto €)', 'regie.rate', c.regie?.rate ?? '', { attrs: 'inputmode="decimal"', hint: 'wird beim Umwandeln in eine Rechnung eingesetzt' })}
+      ${field('Standard-Stundensatz (netto €)', 'regie.rate', c.regie?.rate ?? '', { attrs: 'inputmode="decimal"', hint: 'gilt für Monteure ohne eigenen Stundensatz (Stammdaten → Monteure)' })}
       ${TRAVEL.filter((t) => t.km).map((t) => field(`Fahrtkosten bis ${t.km} km (netto €)`, 'regie.travel' + t.km, c.regie?.['travel' + t.km] ?? t.def, { attrs: 'inputmode="decimal"' })).join('')}
       ${field('Hinweise und Bestätigung über der Unterschrift', 'regie.legalText', c.regie?.legalText ?? REGIE_LEGAL_DEFAULT, { type: 'textarea', full: true })}
     </div>
@@ -1595,6 +1597,7 @@ async function route() {
     case 'einstellungen': return viewSettings();
     case 'vorlagen': return viewTemplates();
     case 'berichte': return reports().viewReports(params);
+    case 'monteure': return reports().viewWorkers();
     case 'bericht': return reports().viewReport(parts[1] || 'neu');
     default: return viewHome();
   }

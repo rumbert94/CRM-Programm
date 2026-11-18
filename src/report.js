@@ -21,8 +21,30 @@ export const SURCHARGE = [
   { key: 'none', label: 'ohne', pct: 0 },
   { key: '25', label: '25 % (17:00 – 21:59)', pct: 25 },
   { key: '50n', label: '50 % (22:00 – 06:59)', pct: 50 },
-  { key: '50s', label: '50 % Sonn- und Feiertage', pct: 50 },
+  { key: '100s', label: '100 % Sonn- und Feiertage', pct: 100 },
 ];
+// ältere Berichte (vor der Umstellung auf 100 %) behalten ihren Satz
+export const surchargeOf = (key) => SURCHARGE.find((x) => x.key === key) || (key === '50s' ? { key, label: '50 % Sonn- und Feiertage', pct: 50 } : null);
+
+// Gesetzliche Feiertage in Brandenburg (inkl. Oster- und Pfingstsonntag, Reformationstag)
+function easter(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(y, month - 1, day));
+}
+export function holidayBB(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return '';
+  const y = Number(iso.slice(0, 4));
+  const fixed = { '01-01': 'Neujahr', '05-01': 'Tag der Arbeit', '10-03': 'Tag der Deutschen Einheit', '10-31': 'Reformationstag', '12-25': '1. Weihnachtsfeiertag', '12-26': '2. Weihnachtsfeiertag' };
+  if (fixed[iso.slice(5)]) return fixed[iso.slice(5)];
+  const e = easter(y).getTime();
+  const rel = { '-2': 'Karfreitag', 0: 'Ostersonntag', 1: 'Ostermontag', 39: 'Christi Himmelfahrt', 49: 'Pfingstsonntag', 50: 'Pfingstmontag' };
+  const diff = Math.round((Date.parse(iso + 'T00:00:00Z') - e) / 86400000);
+  if (rel[diff]) return rel[diff];
+  return new Date(iso + 'T12:00:00Z').getUTCDay() === 0 ? 'Sonntag' : '';
+}
 export const travelPrice = (c, key) => {
   const t = TRAVEL.find((x) => x.key === key);
   if (!t || !t.km) return 0;
@@ -126,6 +148,53 @@ export function initReports(ctx) {
   const { $, $$, shell, field, select, go, toast, company, getCompanyId, pickTemplate, newDoc, icon, avatar, pageHead, searchBox, setPending, debounce } = ctx;
 
   const STATUS = ['Entwurf', 'Unterschrieben', 'Abgerechnet'];
+  const workers = () => db.all('worker', (w) => w.companyId === getCompanyId()).sort((a, b) => a.name.localeCompare(b.name));
+  const workerOf = (w) => (w.workerId && db.get(w.workerId)) || workers().find((x) => x.name.trim().toLowerCase() === String(w.name || '').trim().toLowerCase());
+
+  // ---------- Monteure (Stammdaten mit Stundensatz) ----------
+  function viewWorkers() {
+    const c = company();
+    const list = workers();
+    shell(`
+    ${pageHead('Monteure', '<button class="btn primary" id="newW">+ Neuer Monteur</button>')}
+    <p class="muted">Stundensatz leer lassen = Standard-Stundensatz aus den Firmeneinstellungen${c.regie?.rate ? ` (${fmtNum(parseNum(c.regie.rate))} €)` : ''}.</p>
+    ${list.length ? `<ul class="list">${list
+      .map((w) => `<li><a class="row" href="javascript:void 0" data-wk="${w.id}">${avatar(w.name)}<div class="row-main"><b>${esc(w.name)}</b><small>${esc(w.role || 'Monteur')}</small></div>
+        <b class="amount">${w.rate !== '' && w.rate !== undefined ? fmtNum(parseNum(w.rate)) + ' €/Std' : 'Standard'}</b>${icon('chevron', 'chev')}</a></li>`)
+      .join('')}</ul>` : '<p class="empty">Noch keine Monteure angelegt.</p>'}`, 'monteure');
+    const edit = (w) => {
+      const isNew = !w;
+      w = w || { id: uid(), type: 'worker', companyId: getCompanyId(), name: '', role: '', rate: '' };
+      const ov = document.createElement('div');
+      ov.className = 'overlay';
+      ov.innerHTML = `<div class="sheet"><div class="bar"><h2>${isNew ? 'Neuer Monteur' : 'Monteur bearbeiten'}</h2><button class="link" data-close>Abbrechen</button></div>
+        <form id="wf" class="grid">
+          ${field('Name *', 'name', w.name, { attrs: 'required' })}
+          ${field('Funktion', 'role', w.role, { attrs: 'placeholder="z. B. Meister, Geselle, Azubi"' })}
+          ${field('Stundensatz netto (€)', 'rate', w.rate ?? '', { attrs: 'inputmode="decimal"', hint: 'leer = Standard-Stundensatz' })}
+          <div class="full actions"><button class="btn primary">Speichern</button>${isNew ? '' : '<button type="button" class="btn danger push-right" id="wDel">Löschen</button>'}</div>
+        </form></div>`;
+      document.body.appendChild(ov);
+      $('[data-close]', ov).onclick = () => ov.remove();
+      $('[name=name]', ov).focus();
+      $('#wf', ov).onsubmit = async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target));
+        await db.put({ ...w, name: data.name.trim(), role: data.role.trim(), rate: data.rate.trim() });
+        ov.remove();
+        toast('Monteur gespeichert');
+        viewWorkers();
+      };
+      $('#wDel', ov) && ($('#wDel', ov).onclick = async () => {
+        if (!confirm(`Monteur „${w.name}“ löschen? Bestehende Regieberichte bleiben unverändert.`)) return;
+        await db.remove(w.id);
+        ov.remove();
+        viewWorkers();
+      });
+    };
+    $('#newW').onclick = () => edit(null);
+    $$('[data-wk]').forEach((a) => (a.onclick = () => edit(db.get(a.dataset.wk))));
+  }
 
   function viewReports(params) {
     const f = params.get('f') || '';
@@ -168,7 +237,7 @@ export function initReports(ctx) {
       id === 'neu'
         ? {
             id: uid(), type: 'report', companyId: getCompanyId(), customerId: '', number: '', date: today(), project: '',
-            start: hhmm(nowT), end: '', pause: '', workers: [{ id: uid(), name: c.owner || c.contactName || '', hours: '' }],
+            start: hhmm(nowT), end: '', pause: '', workers: [workers()[0] ? { id: uid(), workerId: workers()[0].id, name: workers()[0].name, hours: '' } : { id: uid(), name: c.owner || c.contactName || '', hours: '' }],
             travel: 'none', surcharge: 'none', dirt: false, items: [{ id: uid(), qty: '1', unit: 'H87', desc: '' }], notes: '', status: 'Entwurf',
           }
         : db.get(id);
@@ -205,11 +274,12 @@ export function initReports(ctx) {
             ${field('Pause (Min.)', 'pause', r.pause, { type: 'number', attrs: dis + ' min="0" step="5" inputmode="numeric"' })}
           </div>
           <div id="workers">${(r.workers || [])
-            .map((w) => `<div class="wrow" data-w="${w.id}"><input class="w-name" placeholder="Monteur" value="${esc(w.name || '')}" ${dis}>
+            .map((w) => `<div class="wrow" data-w="${w.id}"><input class="w-name" list="workerList" placeholder="Monteur wählen oder eintippen" value="${esc(w.name || '')}" ${dis}>
               <label class="w-h"><input class="w-hours" inputmode="decimal" placeholder="${fmtNum(spanHours(r))}" value="${esc(w.hours ?? '')}" ${dis}><span>Std</span></label>
               ${locked ? '' : '<button type="button" class="link danger w-del" aria-label="Monteur entfernen">✕</button>'}</div>`)
             .join('')}</div>
-          ${locked ? '' : '<div class="actions"><button type="button" class="btn" id="addW">+ Monteur</button></div>'}
+          <datalist id="workerList">${workers().map((w) => `<option value="${esc(w.name)}">`).join('')}</datalist>
+          ${locked ? '' : `<div class="actions"><button type="button" class="btn" id="addW">+ Monteur</button><a class="btn" href="#/monteure">Monteure verwalten</a></div>`}
           <p class="muted small">Stunden leer lassen = aus Beginn/Ende/Pause berechnet. Gesamt: <b id="hTotal">${fmtNum(totalHours(r))} Std</b></p>
         </section>
         <section class="rcard"><h3>Fahrtkostenpauschale</h3>${radios('travel', TRAVEL, r.travel, (o) => (o.km ? `${o.label} · ${fmtNum(travelPrice(c, o.key))} €` : o.label))}</section>
@@ -226,6 +296,10 @@ export function initReports(ctx) {
             .join('')}</div>
           ${locked ? '' : '<div class="actions"><button type="button" class="btn" id="addI">+ Zeile</button><button type="button" class="btn" id="addTpl">☆ aus Vorlage</button></div>'}
           ${field('Bemerkungen', 'notes', r.notes, { type: 'textarea', full: true, attrs: dis })}
+        </section>
+        <section class="rcard"><h3>Interne Notiz</h3>
+          <p class="muted small">Nur für dich: erscheint nicht auf dem PDF, gehört nicht zur Unterschrift und bleibt jederzeit änderbar.</p>
+          <textarea name="internalNote" rows="2" placeholder="z. B. Material nachberechnen, Rücksprache wegen …">${esc(r.internalNote || '')}</textarea>
         </section>
         <section class="rcard"><h3>Unterschriften</h3>
           ${sigBox(r.signature, 'Auftraggeber')}
@@ -250,8 +324,9 @@ export function initReports(ctx) {
     };
 
     const collect = () => {
-      if (locked) return;
       const f = $('#rf');
+      r.internalNote = f.internalNote.value;
+      if (locked) return;
       r.customerId = f.customerId.value;
       r.date = f.date.value;
       r.project = f.project.value;
@@ -262,7 +337,11 @@ export function initReports(ctx) {
       r.surcharge = f.surcharge.value || 'none';
       r.dirt = f.dirt.checked;
       r.notes = f.notes.value;
-      r.workers = $$('#workers [data-w]').map((el) => ({ id: el.dataset.w, name: $('.w-name', el).value, hours: $('.w-hours', el).value.trim() }));
+      r.workers = $$('#workers [data-w]').map((el) => {
+        const name = $('.w-name', el).value;
+        const m = workerOf({ name });
+        return { id: el.dataset.w, name, hours: $('.w-hours', el).value.trim(), ...(m ? { workerId: m.id } : {}) };
+      });
       r.items = $$('#ritems [data-i]').map((el) => ({ id: el.dataset.i, qty: $('.i-qty', el).value, unit: $('.i-unit', el).value, desc: $('.i-desc', el).value }));
     };
     const empty = () => !r.customerId && !r.project && !(r.items || []).some((i) => i.desc?.trim());
@@ -358,6 +437,15 @@ export function initReports(ctx) {
         autosave();
       });
       f.onsubmit = (e) => e.preventDefault();
+      f.date.addEventListener('change', () => {
+        const h = holidayBB(f.date.value);
+        const cur = f.querySelector('[name=surcharge]:checked')?.value || 'none';
+        if (h && cur === 'none') {
+          f.querySelector('[name=surcharge][value="100s"]').checked = true;
+          autosave();
+          toast(`${h} – Zuschlag 100 % gesetzt`);
+        }
+      });
       $('#quickCust') && ($('#quickCust').onclick = quickCustomer);
       $('#addW') && ($('#addW').onclick = () => {
         collect();
@@ -438,7 +526,7 @@ export function initReports(ctx) {
       }));
       $('#rPdf').onclick = async () => {
         collect();
-        if (!locked) await save();
+        await save();
         const k = r.customerSnapshot || db.get(r.customerId) || {};
         const { buildReportPdf } = await import('./reportpdf.js');
         const bytes = await buildReportPdf(r, company(), k);
@@ -472,10 +560,22 @@ export function initReports(ctx) {
       const hours = totalHours(r);
       const items = [];
       const ws = (r.workers || []).filter((w) => workerHours(r, w) > 0);
-      for (const w of ws) items.push({ id: uid(), title: '', desc: `Arbeitszeit${w.name ? ' ' + w.name : ' Monteur'} am ${fmtDate(r.date)}`, qty: fmtNum(workerHours(r, w)), unit: 'HUR', price: rate ? fmtNum(rate) : '', vat });
-      const s = SURCHARGE.find((x) => x.key === r.surcharge);
-      if (s?.pct && hours) items.push({ id: uid(), title: '', desc: `Zuschlag ${s.label}`, qty: fmtNum(hours), unit: 'HUR', price: rate ? fmtNum(round2((rate * s.pct) / 100)) : '', vat });
-      if (r.dirt && hours) items.push({ id: uid(), title: '', desc: 'Schmutzzulage 50 %', qty: fmtNum(hours), unit: 'HUR', price: rate ? fmtNum(round2(rate * 0.5)) : '', vat });
+      const rateOf = (w) => {
+        const m = workerOf(w);
+        return m && m.rate !== '' && m.rate !== undefined ? parseNum(m.rate) : rate;
+      };
+      const money = (v) => (v ? fmtNum(round2(v)) : '');
+      for (const w of ws) items.push({ id: uid(), title: '', desc: `Arbeitszeit${w.name ? ' ' + w.name : ' Monteur'} am ${fmtDate(r.date)}`, qty: fmtNum(workerHours(r, w)), unit: 'HUR', price: money(rateOf(w)), vat });
+      // Zuschläge: bei gleichem Stundensatz eine Zeile, sonst je Monteur
+      const sameRate = new Set(ws.map(rateOf)).size <= 1;
+      const extra = (label, pct) => {
+        if (!hours) return;
+        if (sameRate) items.push({ id: uid(), title: '', desc: label, qty: fmtNum(hours), unit: 'HUR', price: money(((ws[0] ? rateOf(ws[0]) : rate) * pct) / 100), vat });
+        else for (const w of ws) items.push({ id: uid(), title: '', desc: `${label} – ${w.name || 'Monteur'}`, qty: fmtNum(workerHours(r, w)), unit: 'HUR', price: money((rateOf(w) * pct) / 100), vat });
+      };
+      const s = surchargeOf(r.surcharge);
+      if (s?.pct) extra(`Zuschlag ${s.label}`, s.pct);
+      if (r.dirt) extra('Schmutzzulage 50 %', 50);
       const t = TRAVEL.find((x) => x.key === r.travel);
       if (t?.km) items.push({ id: uid(), title: '', desc: `Kfz-Fahrtkostenpauschale < ${t.km} km am ${fmtDate(r.date)}`, qty: '1', unit: 'H87', price: fmtNum(travelPrice(c, t.key)), vat });
       for (const it of r.items || []) {
@@ -495,7 +595,7 @@ export function initReports(ctx) {
     render();
   }
 
-  return { viewReports, viewReport };
+  return { viewReports, viewReport, viewWorkers };
 }
 
 export { unitLabel };
