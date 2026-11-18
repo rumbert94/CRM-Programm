@@ -1117,7 +1117,7 @@ async function saveTemplate(it) {
   toast(dup.length ? 'Vorlage aktualisiert' : 'Als Vorlage gespeichert');
 }
 
-const tplMatches = (a, q) => !q || [a.title, a.desc].join(' ').toLowerCase().includes(q.toLowerCase());
+const tplMatches = (a, q) => !q || [a.title, a.desc, a.group].join(' ').toLowerCase().includes(q.toLowerCase());
 const tplLabel = (a) => a.title || (a.desc || '').split('\n')[0].slice(0, 80);
 
 // KI-Assistent: Beschreibung (Text oder Sprache) → Positionsvorschläge zum Prüfen
@@ -1234,15 +1234,33 @@ function pickTemplate(onPick) {
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<div class="sheet"><div class="bar"><h2>Vorlage einfügen</h2><button class="link" data-close>Schließen</button></div>
-    <input class="search" placeholder="Suchen …" id="tplQ"><ul class="list" id="tplList"></ul></div>`;
+    <div id="tplGrps"></div><input class="search" placeholder="Suchen …" id="tplQ"><ul class="list" id="tplList"></ul></div>`;
   document.body.appendChild(ov);
   const all = db.all('article', (a) => a.companyId === companyId).sort((a, b) => (b.usage || 0) - (a.usage || 0) || tplLabel(a).localeCompare(tplLabel(b)));
-  const render = (q) => {
-    const list = all.filter((a) => tplMatches(a, q));
-    $('#tplList', ov).innerHTML = list.length
-      ? list.map((a) => `<li><a href="javascript:void 0" data-id="${a.id}"><div><b>${esc(tplLabel(a))}</b><br><small>${esc((a.title ? a.desc : '') || '').slice(0, 120)}</small></div><div class="right">${eur(a.price)}<br><small>je ${esc(unitLabel(a.unit))}</small></div></a></li>`).join('')
-      : '<li class="empty" style="padding:1rem">Keine Vorlagen gefunden. Speichere Positionen mit „☆ Vorlage“.</li>';
+  const groups = tplGroups();
+  let grp = sessionStorage.getItem('pickGrp') || '';
+  if (grp && grp !== NO_GROUP && !groups.includes(grp)) grp = '';
+  let lastQ = '';
+  const renderGrps = () => {
+    $('#tplGrps', ov).innerHTML = groups.length ? groupChips(groups, grp, 'data-pg') : '';
+    $$('[data-pg]', ov).forEach((b) => (b.onclick = () => {
+      grp = b.dataset.pg;
+      sessionStorage.setItem('pickGrp', grp);
+      renderGrps();
+      render(lastQ);
+    }));
   };
+  const item = (a) => `<li><a href="javascript:void 0" data-id="${a.id}"><div><b>${esc(tplLabel(a))}</b><br><small>${esc((a.title ? a.desc : '') || '').slice(0, 120)}</small></div><div class="right">${eur(a.price)}<br><small>je ${esc(unitLabel(a.unit))}</small></div></a></li>`;
+  const render = (q) => {
+    lastQ = q;
+    const list = all.filter((a) => tplMatches(a, q) && inGroup(a, grp));
+    $('#tplList', ov).innerHTML = !list.length
+      ? '<li class="empty" style="padding:1rem">Keine Vorlagen gefunden. Speichere Positionen mit „☆ Vorlage“.</li>'
+      : !grp && groups.length
+        ? byGroup(list).map(([g, arr]) => `<li class="subhead">${esc(g || 'Ohne Gruppe')}</li>${arr.map(item).join('')}`).join('')
+        : list.map(item).join('');
+  };
+  renderGrps();
   render('');
   const close = () => ov.remove();
   ov.addEventListener('click', (e) => {
@@ -1258,40 +1276,120 @@ function pickTemplate(onPick) {
   $('#tplQ', ov).focus();
 }
 
+const NO_GROUP = '__none';
+const tplGroups = () => [...new Set(db.all('article', (a) => a.companyId === companyId).map((a) => (a.group || '').trim()).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'de'));
+const inGroup = (a, g) => !g || (g === NO_GROUP ? !(a.group || '').trim() : (a.group || '').trim() === g);
+// Liste nach Gruppen gliedern: [[Gruppenname|'', Vorlagen], …], „Ohne Gruppe“ zuletzt
+const byGroup = (list) => {
+  const m = new Map();
+  for (const a of list) {
+    const g = (a.group || '').trim();
+    if (!m.has(g)) m.set(g, []);
+    m.get(g).push(a);
+  }
+  return [...m].sort(([x], [y]) => (!x ? 1 : !y ? -1 : x.localeCompare(y, 'de')));
+};
+const groupChips = (groups, cur, attr) =>
+  `<div class="segs tpl-segs">${[['', 'Alle'], ...groups.map((g) => [g, g]), [NO_GROUP, 'Ohne Gruppe']]
+    .map(([k, l]) => `<button type="button" class="seg ${k === cur ? 'on' : ''}" ${attr}="${esc(k)}">${esc(l)}</button>`)
+    .join('')}</div>`;
+
 function viewTemplates() {
-  const q = sessionStorage.getItem('tplQ') || '';
+  const ss = (k, v) => (v === undefined ? sessionStorage.getItem(k) || '' : v ? sessionStorage.setItem(k, v) : sessionStorage.removeItem(k));
+  const q = ss('tplQ');
+  const groups = tplGroups();
+  let grp = ss('tplGroup');
+  if (grp && grp !== NO_GROUP && !groups.includes(grp)) grp = '';
+  const sel = ss('tplSel') === '1';
   const list = db
     .all('article', (a) => a.companyId === companyId)
-    .filter((a) => tplMatches(a, q))
-    .sort((a, b) => tplLabel(a).localeCompare(tplLabel(b)));
-  const editId = sessionStorage.getItem('tplEdit');
-  const ed = editId === 'neu' ? { type: 'article', companyId, unit: 'H87', vat: company().defaultVat ?? 19 } : editId ? db.get(editId) : null;
+    .filter((a) => tplMatches(a, q) && inGroup(a, grp))
+    .sort((a, b) => tplLabel(a).localeCompare(tplLabel(b), 'de'));
+  const editId = ss('tplEdit');
+  const ed = editId === 'neu' ? { type: 'article', companyId, unit: 'H87', vat: company().defaultVat ?? 19, group: grp && grp !== NO_GROUP ? grp : '' } : editId ? db.get(editId) : null;
+  const dl = `<datalist id="grpList">${groups.map((g) => `<option value="${esc(g)}">`).join('')}</datalist>`;
+  const row = (a) =>
+    sel
+      ? `<li><label class="row sel-row"><input type="checkbox" data-sel="${a.id}"><div class="row-main"><b>${esc(tplLabel(a))}</b><small>${esc(a.group || 'Ohne Gruppe')}</small></div><div class="right"><b class="amount">${eur(a.price)}</b></div></label></li>`
+      : `<li><a class="row" href="javascript:void 0" data-edit="${a.id}"><span class="row-ic">${icon('vorlagen')}</span><div class="row-main"><b>${esc(tplLabel(a))}</b><small>${esc((a.title ? a.desc : '') || '').slice(0, 140)}</small></div><div class="right"><b class="amount">${eur(a.price)}</b><br><small class="muted">je ${esc(unitLabel(a.unit))}</small></div>${icon('chevron', 'chev')}</a></li>`;
+  const section = ([g, arr]) => `<section class="group">
+      <div class="group-head"><div class="gh-date"><b>${esc(g || 'Ohne Gruppe')}</b></div>
+        <div class="gh-pills"><span class="pill">${arr.length} ${arr.length === 1 ? 'Vorlage' : 'Vorlagen'}</span>${g && !sel ? `<button type="button" class="link" data-ren="${esc(g)}">Umbenennen</button><button type="button" class="link danger" data-ungroup="${esc(g)}">Auflösen</button>` : ''}</div></div>
+      <ul class="list flat">${arr.map(row).join('')}</ul></section>`;
   shell(`
-  ${pageHead('Positionsvorlagen', '<button class="btn primary" id="newTpl">+ Neue Vorlage</button>')}
-  <p class="muted">Häufige Leistungen hier ablegen oder im Beleg bei einer Position auf „☆ Vorlage“ tippen. Im Beleg fügst du sie mit „+ Aus Vorlagen“ ein.</p>
+  ${pageHead('Positionsvorlagen', `<button class="btn" id="selMode">${sel ? 'Fertig' : 'Gruppen zuordnen'}</button><button class="btn primary" id="newTpl">+ Neue Vorlage</button>`)}
+  <p class="muted">Häufige Leistungen hier ablegen oder im Beleg bei einer Position auf „☆ Vorlage“ tippen. Im Beleg fügst du sie mit „+ Aus Vorlagen“ ein. Mit Gruppen (z. B. Heizung, Sanitär, Material) behältst du den Überblick.</p>
+  ${dl}
   ${ed ? `<form id="tf" class="grid card">
     ${field('Kurztext (fett)', 'title', ed.title, { full: true })}
     ${field('Beschreibung', 'desc', ed.desc, { type: 'textarea', full: true })}
+    ${field('Gruppe', 'group', ed.group || '', { attrs: 'list="grpList" autocomplete="off" placeholder="z. B. Heizung – neue Gruppe einfach eintippen"' })}
     ${select('Einheit', 'unit', ed.unit, UNITS.map((u) => ({ value: u.code, label: u.label })))}
     ${field('Einzelpreis netto €', 'price', ed.price != null ? String(ed.price).replace('.', ',') : '', { attrs: 'inputmode="decimal"' })}
     ${select('USt', 'vat', ed.vat ?? company().defaultVat ?? 19, vatRates(company(), ed.vat).map((v) => ({ value: v, label: fmtNum(v) + ' %' })))}
     <div class="actions full"><button class="btn primary">Speichern</button><button type="button" class="btn" id="tplCancel">Abbrechen</button>${ed.id ? '<button type="button" class="btn danger" id="tplDel">Löschen</button>' : ''}</div>
   </form>` : ''}
-  <div class="toolbar"><span></span>${searchBox('q', q, 'Vorlagen suchen …')}</div>
-  ${list.length ? `<ul class="list">${list.map((a) => `<li><a class="row" href="javascript:void 0" data-edit="${a.id}"><span class="row-ic">${icon('vorlagen')}</span><div class="row-main"><b>${esc(tplLabel(a))}</b><small>${esc((a.title ? a.desc : '') || '').slice(0, 140)}</small></div><div class="right"><b class="amount">${eur(a.price)}</b><br><small class="muted">je ${esc(unitLabel(a.unit))}</small></div>${icon('chevron', 'chev')}</a></li>`).join('')}</ul>` : '<p class="empty">Noch keine Vorlagen.</p>'}
+  ${sel ? `<div class="card sel-bar"><span id="selN">0 ausgewählt</span><input id="selGrp" list="grpList" autocomplete="off" placeholder="Gruppe wählen oder neu eintippen"><button type="button" class="btn primary" id="selApply">Zuordnen</button><button type="button" class="btn" id="selNone">Aus Gruppe nehmen</button></div>` : ''}
+  <div class="toolbar">${groupChips(groups, grp, 'data-grp')}${searchBox('q', q, 'Vorlagen suchen …')}</div>
+  ${list.length ? (grp ? `<ul class="list">${list.map(row).join('')}</ul>` : byGroup(list).map(section).join('')) : '<p class="empty">Keine Vorlagen.</p>'}
   `, 'vorlagen');
   const reopen = (id) => {
-    if (id) sessionStorage.setItem('tplEdit', id);
-    else sessionStorage.removeItem('tplEdit');
+    ss('tplEdit', id || '');
     viewTemplates();
   };
   $('#newTpl').onclick = () => reopen('neu');
+  $('#selMode').onclick = () => {
+    ss('tplSel', sel ? '' : '1');
+    reopen(null);
+  };
+  $$('[data-grp]').forEach((b) => (b.onclick = () => {
+    ss('tplGroup', b.dataset.grp);
+    viewTemplates();
+  }));
   $$('[data-edit]').forEach((a) => (a.onclick = () => reopen(a.dataset.edit)));
+  const setGroup = async (ids, g) => {
+    for (const id of ids) {
+      const a = db.get(id);
+      if (a) await db.put({ ...a, group: g });
+    }
+  };
+  $$('[data-ren]').forEach((b) => (b.onclick = async () => {
+    const old = b.dataset.ren;
+    const nu = prompt(`Gruppe „${old}“ umbenennen in:`, old)?.trim();
+    if (!nu || nu === old) return;
+    await setGroup(db.all('article', (a) => a.companyId === companyId && (a.group || '').trim() === old).map((a) => a.id), nu);
+    toast('Gruppe umbenannt');
+    viewTemplates();
+  }));
+  $$('[data-ungroup]').forEach((b) => (b.onclick = async () => {
+    const g = b.dataset.ungroup;
+    if (!confirm(`Gruppe „${g}“ auflösen? Die Vorlagen bleiben erhalten und stehen dann unter „Ohne Gruppe“.`)) return;
+    await setGroup(db.all('article', (a) => a.companyId === companyId && (a.group || '').trim() === g).map((a) => a.id), '');
+    toast('Gruppe aufgelöst');
+    viewTemplates();
+  }));
+  if (sel) {
+    const picked = () => $$('[data-sel]').filter((c) => c.checked).map((c) => c.dataset.sel);
+    $$('[data-sel]').forEach((c) => (c.onchange = () => ($('#selN').textContent = picked().length + ' ausgewählt')));
+    const apply = async (g) => {
+      const ids = picked();
+      if (!ids.length) return toast('Bitte zuerst Vorlagen anhaken', 'err');
+      await setGroup(ids, g);
+      toast(g ? `${ids.length} Vorlage(n) → ${g}` : `${ids.length} Vorlage(n) ohne Gruppe`);
+      viewTemplates();
+    };
+    $('#selApply').onclick = () => {
+      const g = $('#selGrp').value.trim();
+      if (!g) return toast('Bitte eine Gruppe eintippen oder wählen', 'err');
+      apply(g);
+    };
+    $('#selNone').onclick = () => apply('');
+  }
   if (ed) {
     $('#tf').onsubmit = async (e) => {
       e.preventDefault();
       const f = formData(e.target);
-      await db.put({ ...ed, ...f, price: parseNum(f.price), vat: Number(f.vat) });
+      await db.put({ ...ed, ...f, group: (f.group || '').trim(), price: parseNum(f.price), vat: Number(f.vat) });
       toast('Vorlage gespeichert');
       reopen(null);
     };
@@ -1304,7 +1402,7 @@ function viewTemplates() {
   }
   const qi = $('#q');
   qi.oninput = debounce(() => {
-    sessionStorage.setItem('tplQ', qi.value);
+    ss('tplQ', qi.value);
     viewTemplates();
     const n = $('#q');
     n.focus();

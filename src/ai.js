@@ -36,6 +36,7 @@ export async function suggestPositions({ text, kind, templates, company, custome
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   const tpl = templates.slice(0, 400).map((a) => ({
     id: a.id,
+    group: a.group || '',
     title: a.title || '',
     desc: (a.desc || '').slice(0, 300),
     unit: a.unit,

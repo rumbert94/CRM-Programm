@@ -402,3 +402,16 @@ h2.sec { margin: 0 0 0.7rem; }
 .badge.warn { background: color-mix(in srgb, #f59e0b 22%, transparent); color: #b45309; }
 .info.err { border-color: var(--danger, #dc2626); color: var(--danger, #dc2626); }
 #aiMic.rec { background: #fee2e2; border-color: #dc2626; color: #991b1b; }
+
+/* Vorlagen-Gruppen */
+.tpl-segs { max-width: 100%; }
+.toolbar:has(.tpl-segs) { flex-wrap: wrap; gap: 0.6rem; }
+.sheet .tpl-segs { margin-bottom: 0.6rem; }
+.list .subhead { padding: 0.5rem 0.9rem; background: var(--soft); font-weight: 600; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.sel-row { cursor: pointer; }
+.sel-row input { width: 20px; height: 20px; margin: 0 0.4rem 0 0; }
+.sel-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; position: sticky; top: 0.5rem; z-index: 5; }
+.sel-bar input { flex: 1; min-width: 180px; }
+.gh-pills .link { font-size: 0.88rem; }
+.tpl-segs button.seg { border: 0; background: transparent; font: inherit; font-size: 0.92rem; cursor: pointer; min-height: 0; }
+.tpl-segs button.seg.on { background: var(--card); }
