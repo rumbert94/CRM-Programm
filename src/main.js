@@ -485,17 +485,36 @@ async function viewDoc(id, params, kindForNew) {
     Object.assign(d, formData($('#f')), formData($('#f2')));
     d.prepaid = d.invoiceType === 'schluss' ? round2((d.deductions || []).reduce((s, x) => s + x.gross, 0)) : parseNum(d.prepaid);
     d.abschlagNo = Number(d.abschlagNo) || undefined;
+    const empty = !d.customerId && !d.items.length && !d.subject;
+    if (empty && !db.get(d.id)) return false; // leeren neuen Beleg nicht anlegen
+    if (!d.locked) {
+      await db.put(d, { silent: true });
+      sync.scheduleSync();
+      if (location.hash.includes('/neu/')) history.replaceState(null, '', '#/beleg/' + d.id);
+    } else {
+      await db.put(d, { silent: true }); // nur Status u. Ä. änderbar
+    }
+    const st = $('#saveState');
     if (!d.customerId) {
-      $('#saveState').textContent = 'Bitte Kunde wählen – noch nicht gespeichert.';
+      if (st) st.textContent = 'Entwurf gespeichert – bitte noch einen Kunden wählen.';
       return false;
     }
-    await db.put(d, { silent: true });
-    sync.scheduleSync();
-    if (location.hash.includes('/neu/')) history.replaceState(null, '', '#/beleg/' + d.id);
-    $('#saveState').textContent = 'Gespeichert ' + new Date().toLocaleTimeString('de-DE');
+    if (st) st.textContent = 'Automatisch gespeichert ' + new Date().toLocaleTimeString('de-DE');
     return true;
   };
-  const autosave = debounce(save, 700);
+  const autosaveDebounced = debounce(save, 700);
+  let dirty = false;
+  const autosave = () => {
+    dirty = true;
+    if (st0()) st0().textContent = 'Speichert …';
+    autosaveDebounced();
+  };
+  const st0 = () => $('#saveState');
+  // Beim Verlassen der Seite oder App-Wechsel sofort speichern
+  pendingSave = async () => {
+    if (dirty) await save();
+    dirty = false;
+  };
 
   const tools = (i) => locked ? '' : `<span class="item-tools"><button class="link" data-up="${i}" ${i === 0 ? 'disabled' : ''} title="nach oben">▲</button><button class="link" data-down="${i}" ${i === d.items.length - 1 ? 'disabled' : ''} title="nach unten">▼</button>${d.items[i].type === 'title' ? '' : `<button class="link" data-tpl="${i}" title="Als Vorlage speichern">☆ Vorlage</button>`}<button class="link danger" data-rm="${i}" title="entfernen">✕</button></span>`;
   const renderItems = () => {
@@ -1187,7 +1206,21 @@ function viewWelcome() {
 }
 
 // ---------- Router ----------
+let pendingSave = null;
+async function flushSave() {
+  const f = pendingSave;
+  pendingSave = null;
+  if (f) {
+    try { await f(); } catch (e) { console.error(e); }
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && pendingSave) pendingSave();
+});
+window.addEventListener('pagehide', () => pendingSave && pendingSave());
+
 async function route() {
+  await flushSave();
   const [path, qs] = location.hash.slice(1).split('?');
   const params = new URLSearchParams(qs || '');
   const parts = (path || '/').split('/').filter(Boolean);
