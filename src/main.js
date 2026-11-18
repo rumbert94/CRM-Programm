@@ -667,6 +667,38 @@ function textField(c, label, key, name, value, hint = '') {
   </div>`;
 }
 
+// Abschnitte (h2 + Inhalt) auf-/zuklappbar machen, Zustand pro Gerät merken
+function makeCollapsible(form, openAll = false) {
+  let state = {};
+  try { state = JSON.parse(localStorage.getItem('openSections') || '{}'); } catch {}
+  const kids = [...form.children];
+  let det = null;
+  for (const el of kids) {
+    if (el.tagName === 'H2') {
+      det = document.createElement('details');
+      det.className = 'section';
+      const key = el.textContent.trim();
+      det.open = openAll || !!state[key];
+      const sum = document.createElement('summary');
+      sum.textContent = key;
+      det.appendChild(sum);
+      el.replaceWith(det);
+      const d = det;
+      // nur echte Klicks merken (programmatisches Öffnen löst auch "toggle" aus)
+      sum.addEventListener('click', () =>
+        setTimeout(() => {
+          state[key] = d.open;
+          try { localStorage.setItem('openSections', JSON.stringify(state)); } catch {}
+        }, 0)
+      );
+    } else if (det && !el.classList.contains('sticky')) {
+      det.appendChild(el);
+    } else {
+      det = null;
+    }
+  }
+}
+
 // ---------- Positionsvorlagen ----------
 async function saveTemplate(it) {
   const dup = db.all('article', (a) => a.companyId === companyId && a.title === it.title && a.desc === it.desc);
@@ -864,6 +896,8 @@ async function viewCompany(id) {
       <button type="button" class="btn" id="preview">Probe-PDF (nur Layout, keine E-Rechnung)</button>
       ${isNew ? '' : '<button type="button" class="btn danger push-right" id="del">Firma löschen</button>'}</div>
   </form>`, 'settings');
+
+  makeCollapsible($('#f'), isNew);
 
   const collect = () => {
     const data = formData($('#f'));

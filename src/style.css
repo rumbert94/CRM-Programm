@@ -176,3 +176,10 @@ summary { cursor: pointer; font-weight: 600; }
 .btn.danger { background: var(--card); border-color: var(--line); color: var(--danger); font-weight: 400; }
 .btn.danger:hover:not(:disabled) { background: var(--card); border-color: var(--danger); }
 .actions .push-right { margin-left: auto; }
+details.section { padding: 0; margin: 0.6rem 0; }
+details.section > summary { padding: 0.9rem 1rem; font-size: 1.05rem; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+details.section > summary::-webkit-details-marker { display: none; }
+details.section > summary::after { content: '▸'; color: var(--muted); transition: transform 0.2s; }
+details.section[open] > summary::after { transform: rotate(90deg); }
+details.section[open] > summary { border-bottom: 1px solid var(--line); }
+details.section > :not(summary) { margin: 0.8rem 1rem; }
