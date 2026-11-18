@@ -161,3 +161,12 @@ export const LAYOUT_DEFAULTS = {
   logoW: 50,
   logoH: 25,
 };
+
+// Belegtitel inkl. Abschlags-/Schlussrechnung
+export function docTitle(d) {
+  if (d.isCreditNote) return 'Gutschrift';
+  if (d.kind === 'rechnung' && d.invoiceType === 'abschlag') return `${d.abschlagNo || 1}. Abschlagsrechnung`;
+  if (d.kind === 'rechnung' && d.invoiceType === 'schluss') return 'Schlussrechnung';
+  return KINDS[d.kind].pdfTitle || KINDS[d.kind].label;
+}
+export const shortTitle = (d) => (d.kind === 'rechnung' && d.invoiceType === 'abschlag' ? `${d.abschlagNo || 1}. Abschlag` : d.kind === 'rechnung' && d.invoiceType === 'schluss' ? 'Schlussrechnung' : KINDS[d.kind].label);

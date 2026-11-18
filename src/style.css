@@ -183,3 +183,6 @@ details.section > summary::after { content: '▸'; color: var(--muted); transiti
 details.section[open] > summary::after { transform: rotate(90deg); }
 details.section[open] > summary { border-bottom: 1px solid var(--line); }
 details.section > :not(summary) { margin: 0.8rem 1rem; }
+
+label.ded { display: flex; gap: 0.8rem; align-items: center; padding: 0.7rem 1rem; cursor: pointer; }
+label.ded input { width: 22px; height: 22px; min-height: 0; flex: none; }

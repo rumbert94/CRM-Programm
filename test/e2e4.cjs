@@ -1,0 +1,43 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch();
+  const ctx = await b.newContext({ viewport: { width: 412, height: 915 }, acceptDownloads: true, locale: 'de-DE' });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on('pageerror', (e) => { errors.push(e.message); console.log('STACK', e.stack); }); p.on('console', (m) => m.type() === 'error' && console.log('CONSOLE', m.text(), JSON.stringify(m.location())));
+  p.on('dialog', (d) => (d.type() === 'prompt' ? d.accept(d.message().includes('Abschlag') ? '30 %' : '') : d.accept()));
+  await p.goto('http://localhost:5173/');
+  await p.click('text=Firma anlegen');
+  const fill = async (n, v) => p.fill(`[name="${n}"]`, v);
+  await fill('name', 'Muster Gebäudetechnik'); await fill('owner', 'Max Muster'); await fill('street', 'Werkweg 3');
+  await fill('zip', '16515'); await fill('city', 'Oranienburg'); await fill('phone', '0176 0000000'); await fill('email', 'info@example.de');
+  await fill('vatId', 'DE123456789'); await fill('iban', 'DE02120300000000202051'); await fill('bic', 'BYLADEM1001');
+  await fill('vatRates', '19; 7; 16; 0');
+  await p.click('button:has-text("Speichern")'); await p.waitForURL(/einstellungen/);
+  await p.click('nav >> text=Kunden'); await p.click('text=+ Neuer Kunde');
+  await fill('name', 'Bauherr Meier'); await fill('street', 'Hauptstr. 1'); await fill('zip', '13467'); await fill('city', 'Berlin');
+  await p.click('form#f button:has-text("Speichern")'); await p.waitForSelector('#nf');
+  await p.click('text=+ Auftrag');
+  for (const [d, pr, v] of [['Badsanierung komplett', '10000', '19'], ['Fachbuch', '200', '7']]) {
+    await p.click('#addItem'); const it = p.locator('#items .item').last();
+    await it.locator('[data-k=desc]').fill(d); await it.locator('[data-k=price]').fill(pr); await it.locator('[data-k=vat]').selectOption(v);
+  }
+  const vatOpts = await p.locator('#items .item').first().locator('[data-k=vat] option').allTextContents();
+  await p.waitForTimeout(900);
+  const auftragUrl = p.url();
+  await p.click('#toAbschlag'); await p.waitForSelector('#finalize');
+  const abTitle = await p.textContent('h1');
+  await p.click('#finalize'); await p.waitForSelector('#zugferd');
+  await p.waitForTimeout(3000); console.log('TOAST', await p.locator('.toast').allTextContents(), errors);
+  const [d1] = await Promise.all([p.waitForEvent('download'), p.click('#zugferd')]); await d1.saveAs('test/out/ab1.pdf');
+  await p.goto(auftragUrl); await p.waitForSelector('#toRechnung');
+  const btn = await p.textContent('#toRechnung');
+  await p.screenshot({ path: 'test/shots/g1-auftrag.png', fullPage: true });
+  await p.click('#toRechnung'); await p.waitForSelector('#deductions');
+  const srTitle = await p.textContent('h1');
+  await p.screenshot({ path: 'test/shots/g2-schluss.png', fullPage: true });
+  await p.click('#finalize'); await p.waitForSelector('#zugferd');
+  const [d2] = await Promise.all([p.waitForEvent('download'), p.click('#zugferd')]); await d2.saveAs('test/out/sr.pdf');
+  console.log({ vatOpts, abTitle, btn, srTitle, errors });
+  await b.close();
+})();

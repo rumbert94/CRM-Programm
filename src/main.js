@@ -4,7 +4,7 @@ import * as sync from './sync.js';
 const buildPdf = async (...a) => (await import('./pdf.js')).buildPdf(...a);
 import { buildCII, checkEInvoice } from './einvoice.js';
 import {
-  LAYOUT_DEFAULTS, OLD_PREFIXES, unitLabel, numberPrefix, docFileName, numberItems, esc, uid, eur, fmtDate, fmtDateTime, today, addDays, calcTotals, parseNum, UNITS, KINDS, STATUS, debounce, download, safeFile, fmtNum,
+  LAYOUT_DEFAULTS, OLD_PREFIXES, docTitle, shortTitle, round2, unitLabel, numberPrefix, docFileName, numberItems, esc, uid, eur, fmtDate, fmtDateTime, today, addDays, calcTotals, parseNum, UNITS, KINDS, STATUS, debounce, download, safeFile, fmtNum,
 } from './util.js';
 
 const app = document.getElementById('app');
@@ -25,6 +25,17 @@ function setTheme(t) {
 }
 const isDark = () => getTheme() === 'dark' || (getTheme() === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
 applyTheme();
+
+// Umsatzsteuersätze je Firma einstellbar (z. B. "19; 7; 0")
+function vatRates(c, current) {
+  const list = String(c?.vatRates ?? '19; 7; 0')
+    .split(/[;\s]+/)
+    .map((x) => parseNum(x))
+    .filter((x) => Number.isFinite(x) && x >= 0);
+  const uniq = [...new Set(list.length ? list : [19, 7, 0])];
+  if (current !== undefined && current !== '' && !uniq.includes(Number(current))) uniq.push(Number(current));
+  return uniq;
+}
 
 // Standardtexte: einzeln ein-/ausschaltbar
 const textOn = (c, key) => c?.textsOn?.[key] !== false;
@@ -173,7 +184,7 @@ function docList(docs) {
     .map((d) => {
       const overdue = d.kind === 'rechnung' && d.status === 'Versendet' && d.dueDate && d.dueDate < today();
       return `<li><a href="#/beleg/${d.id}">
-      <div><b>${esc(d.number || 'Entwurf')}</b> · ${esc(KINDS[d.kind].label)}${d.isCreditNote ? ' (Storno)' : ''}<br><small>${esc(customerName(d.customerId))} · ${esc(d.subject || '')}</small></div>
+      <div><b>${esc(d.number || 'Entwurf')}</b> · ${esc(shortTitle(d))}${d.isCreditNote ? ' (Storno)' : ''}<br><small>${esc(customerName(d.customerId))} · ${esc(d.subject || '')}</small></div>
       <div class="right"><b>${eur(calcTotals(d, c).gross)}</b><br><span class="badge ${overdue ? 'warn' : esc(d.status)}">${overdue ? 'überfällig' : esc(d.status)}</span></div>
     </a></li>`;
     })
@@ -330,6 +341,36 @@ const defaultIntro = (kind) =>
 const paymentText = (c, due) =>
   !textOn(c, 'paymentTerms') ? '' : (c.texts?.paymentTerms || 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.').replace('{FAELLIG}', fmtDate(due));
 
+// ---------- Abschläge ----------
+const relatedAbschlaege = (src) =>
+  db.all('doc', (x) => x.kind === 'rechnung' && x.invoiceType === 'abschlag' && x.sourceId === src.id && x.status !== 'Storniert')
+    .sort((a, b) => (a.abschlagNo || 0) - (b.abschlagNo || 0));
+
+function abschlagCandidates(d) {
+  const used = new Set(
+    db.all('doc', (x) => x.id !== d.id && x.invoiceType === 'schluss' && x.status !== 'Storniert').flatMap((x) => (x.deductions || []).map((y) => y.id))
+  );
+  return db
+    .all('doc', (x) => x.kind === 'rechnung' && x.invoiceType === 'abschlag' && x.locked && x.status !== 'Storniert' && x.customerId === d.customerId && x.companyId === d.companyId && !used.has(x.id))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+}
+
+function deductionOf(x) {
+  const t = calcTotals(x, x.companySnapshot || company());
+  return { id: x.id, number: x.number, date: x.date, title: docTitle(x), net: t.net, tax: t.tax, gross: t.gross };
+}
+
+function abschlagOverview(d) {
+  const ab = relatedAbschlaege(d);
+  if (!ab.length) return '';
+  const c = company();
+  const total = calcTotals(d, c).net;
+  const sum = round2(ab.reduce((s, x) => s + calcTotals(x, c).net, 0));
+  return `<h2>Abschlagsrechnungen</h2><ul class="list">${ab
+    .map((x) => `<li><a href="#/beleg/${x.id}"><div><b>${esc(shortTitle(x))}</b> · ${esc(x.number || 'Entwurf')}<br><small>${fmtDate(x.date)} · ${esc(x.status)}</small></div><div class="right"><b>${eur(calcTotals(x, c).net)}</b><br><small>netto</small></div></a></li>`)
+    .join('')}</ul><p class="sum">Abgerechnet: <b>${eur(sum)}</b> von ${eur(total)} netto (${total ? fmtNum(Math.round((sum / total) * 1000) / 10) : 0} %)</p>`;
+}
+
 // Belegkette: Angebot -> Auftrag -> Rechnung
 function flowHtml(d) {
   const chain = [];
@@ -343,7 +384,7 @@ function flowHtml(d) {
   chain.push(d);
   let next = d;
   for (;;) {
-    const n = db.all('doc', (x) => x.sourceId === next.id && !x.isCreditNote && !String(x.subject || '').startsWith('Storno'))[0];
+    const n = db.all('doc', (x) => x.sourceId === next.id && !x.isCreditNote && x.invoiceType !== 'abschlag' && !String(x.subject || '').startsWith('Storno'))[0];
     if (!n || seen.has(n.id)) break;
     seen.add(n.id);
     chain.push(n);
@@ -351,7 +392,7 @@ function flowHtml(d) {
   }
   if (chain.length < 2) return '';
   return `<div class="flow">${chain
-    .map((x) => (x.id === d.id ? `<span class="cur">${esc(KINDS[x.kind].label)} ${esc(x.number || 'Entwurf')}</span>` : `<a href="#/beleg/${x.id}">${esc(KINDS[x.kind].label)} ${esc(x.number || 'Entwurf')}</a>`))
+    .map((x) => (x.id === d.id ? `<span class="cur">${esc(shortTitle(x))} ${esc(x.number || 'Entwurf')}</span>` : `<a href="#/beleg/${x.id}">${esc(shortTitle(x))} ${esc(x.number || 'Entwurf')}</a>`))
     .join(' → ')}</div>`;
 }
 
@@ -388,7 +429,7 @@ async function viewDoc(id, params, kindForNew) {
   const reverseAllowed = !c.smallBusiness;
 
   shell(`
-  <div class="bar"><h1>${d.isCreditNote ? 'Storno' : kind.label} ${d.number ? 'Nr. ' + esc(d.number) : '(Entwurf)'}</h1>
+  <div class="bar"><h1>${d.isCreditNote ? 'Storno' : esc(docTitle(d))} ${d.number ? 'Nr. ' + esc(d.number) : '(Entwurf)'}</h1>
     <span><span class="badge ${esc(d.status)}">${esc(d.status)}</span>${locked ? ' <span class="badge einv">✓ E-Rechnung (ZUGFeRD)</span>' : ''}</span></div>
   ${flowHtml(d)}
   ${locked ? `<p class="info">Diese Rechnung ist abgeschlossen und kann nicht mehr geändert werden (GoBD). Für Korrekturen bitte stornieren.</p>` : ''}
@@ -408,7 +449,9 @@ async function viewDoc(id, params, kindForNew) {
     ${field('Betreff / Bauvorhaben (mehrzeilig möglich)', 'subject', d.subject, { type: 'textarea', full: true, attrs: dis })}
     ${field('Bestellnummer des Kunden', 'orderReference', d.orderReference, { attrs: dis })}
     ${reverseAllowed ? select('Umsatzsteuer', 'taxMode', d.taxMode || 'normal', [{ value: 'normal', label: 'normal' }, { value: 'reverse', label: '§13b – Kunde schuldet USt (Bauleistung)' }], dis) : '<p class="muted">Kleinunternehmer: keine USt.</p>'}
-    ${d.kind === 'rechnung' ? field('Bereits gezahlt / Anzahlung (€)', 'prepaid', d.prepaid ? fmtNum(d.prepaid) : '', { attrs: dis + ' inputmode="decimal"' }) : ''}
+    ${d.kind === 'rechnung' ? select('Rechnungsart', 'invoiceType', d.invoiceType || 'normal', [{ value: 'normal', label: 'Rechnung' }, { value: 'abschlag', label: 'Abschlagsrechnung' }, { value: 'schluss', label: 'Schlussrechnung' }], dis + ' id="invType"') : ''}
+    ${d.kind === 'rechnung' && d.invoiceType === 'abschlag' ? field('Nr. des Abschlags', 'abschlagNo', d.abschlagNo || 1, { type: 'number', attrs: dis }) : ''}
+    ${d.kind === 'rechnung' && d.invoiceType !== 'schluss' ? field('Bereits gezahlt / Anzahlung (€)', 'prepaid', d.prepaid ? fmtNum(d.prepaid) : '', { attrs: dis + ' inputmode="decimal"' }) : ''}
     ${field('Einleitung', 'intro', d.intro, { type: 'textarea', full: true, attrs: dis })}
   </form>
 
@@ -416,6 +459,8 @@ async function viewDoc(id, params, kindForNew) {
   <div id="items"></div>
   ${locked ? '' : '<div class="actions"><button class="btn" id="addItem">+ Position</button><button class="btn" id="addTitle">+ Titel</button><button class="btn" id="fromTpl">+ Aus Vorlagen</button></div>'}
   <div id="totals" class="totals"></div>
+  ${d.kind === 'rechnung' && d.invoiceType === 'schluss' ? `<h2>Abzuziehende Abschlagsrechnungen</h2><div id="deductions"></div>` : ''}
+  ${d.kind !== 'rechnung' ? abschlagOverview(d) : ''}
 
   <form id="f2" class="grid">
     ${d.kind === 'rechnung' ? field('Zahlungsbedingungen', 'paymentTerms', d.paymentTerms, { type: 'textarea', full: true, attrs: dis }) : ''}
@@ -428,7 +473,8 @@ async function viewDoc(id, params, kindForNew) {
       : `<button class="btn" id="pdf">${d.kind === 'rechnung' ? 'Vorschau (Entwurf)' : 'PDF ansehen'}</button>`}
     ${d.kind === 'rechnung' && !d.locked ? '<button class="btn primary" id="finalize">Rechnung abschließen</button>' : ''}
     ${d.kind === 'angebot' ? '<button class="btn primary" id="toAuftrag">In Auftrag überführen →</button><button class="btn" id="toRechnung">Direkt in Rechnung →</button>' : ''}
-    ${d.kind === 'auftrag' ? '<button class="btn primary" id="toRechnung">In Rechnung überführen →</button>' : ''}
+    ${d.kind === 'auftrag' ? `<button class="btn primary" id="toRechnung">${relatedAbschlaege(d).length ? 'Schlussrechnung erstellen →' : 'In Rechnung überführen →'}</button>` : ''}
+    ${d.kind !== 'rechnung' ? '<button class="btn" id="toAbschlag">Abschlagsrechnung</button>' : ''}
     ${!d.isCreditNote && d.kind === 'rechnung' && d.locked && d.status !== 'Storniert' ? '<button class="btn danger" id="storno">Stornieren</button>' : ''}
     ${!d.locked ? '<button class="btn danger" id="del">Löschen</button>' : ''}
     <button class="btn" id="copy">Kopieren</button>
@@ -437,7 +483,8 @@ async function viewDoc(id, params, kindForNew) {
 
   const save = async () => {
     Object.assign(d, formData($('#f')), formData($('#f2')));
-    d.prepaid = parseNum(d.prepaid);
+    d.prepaid = d.invoiceType === 'schluss' ? round2((d.deductions || []).reduce((s, x) => s + x.gross, 0)) : parseNum(d.prepaid);
+    d.abschlagNo = Number(d.abschlagNo) || undefined;
     if (!d.customerId) {
       $('#saveState').textContent = 'Bitte Kunde wählen – noch nicht gespeichert.';
       return false;
@@ -468,7 +515,7 @@ async function viewDoc(id, params, kindForNew) {
           <label>Menge<input data-k="qty" inputmode="decimal" value="${esc(String(it.qty ?? '').replace('.', ','))}" ${dis}></label>
           <label>Einheit<select data-k="unit" ${dis}>${UNITS.map((u) => `<option value="${u.code}" ${u.code === it.unit ? 'selected' : ''}>${u.label}</option>`).join('')}</select></label>
           <label>Einzelpreis €<input data-k="price" inputmode="decimal" value="${esc(String(it.price ?? '').replace('.', ','))}" ${dis}></label>
-          ${c.smallBusiness ? '' : `<label>USt<select data-k="vat" ${dis}>${[19, 7, 0].map((v) => `<option value="${v}" ${Number(it.vat) === v ? 'selected' : ''}>${v} %</option>`).join('')}</select></label>`}
+          ${c.smallBusiness ? '' : `<label>USt<select data-k="vat" ${dis}>${vatRates(c, it.vat).map((v) => `<option value="${v}" ${Number(it.vat) === v ? 'selected' : ''}>${fmtNum(v)} %</option>`).join('')}</select></label>`}
           <div class="line-total">${eur(calcTotals({ items: [it] }, c).net)}</div>
         </div>
       </div>`).join('')
@@ -561,6 +608,14 @@ async function viewDoc(id, params, kindForNew) {
   const convertTo = (kind) => async () => {
     if (!(await save())) return;
     const n = convert(d, kind);
+    if (kind === 'rechnung') {
+      const ab = relatedAbschlaege(d).filter((x) => x.locked);
+      if (ab.length) {
+        n.invoiceType = 'schluss';
+        n.deductions = ab.map(deductionOf);
+        n.prepaid = round2(n.deductions.reduce((s, x) => s + x.gross, 0));
+      }
+    }
     await db.put(n);
     if (d.kind === 'angebot') await db.put({ ...d, status: 'Angenommen' });
     if (d.kind === 'auftrag') await db.put({ ...d, status: 'Erledigt' });
@@ -568,6 +623,65 @@ async function viewDoc(id, params, kindForNew) {
     go('#/beleg/' + n.id);
   };
   $('#toAuftrag') && ($('#toAuftrag').onclick = convertTo('auftrag'));
+  $('#toAbschlag') && ($('#toAbschlag').onclick = async () => {
+    if (!(await save())) return;
+    const t = calcTotals(d, c);
+    const input = prompt(`Abschlag für ${KINDS[d.kind].label} ${d.number} (Auftragssumme netto ${eur(t.net)}).\nProzent (z. B. 30 %) oder Nettobetrag in € (z. B. 2500):`, '30 %');
+    if (!input) return;
+    const isPct = input.includes('%');
+    const val = parseNum(input.replace('%', '').replace('€', ''));
+    if (!(val > 0)) return toast('Ungültige Eingabe', 'err');
+    const nr = relatedAbschlaege(d).length + 1;
+    const groups = t.groups.length ? t.groups : [{ rate: c.defaultVat ?? 19, base: 0 }];
+    const ref = `gemäß ${KINDS[d.kind].pdfTitle || KINDS[d.kind].label} Nr. ${d.number} vom ${fmtDate(d.date)}`;
+    let items;
+    if (isPct) {
+      items = groups.map((g) => ({ id: uid(), desc: `${nr}. Abschlag: ${fmtNum(val)} % der Leistungen ${ref}${groups.length > 1 ? ` (Anteil ${fmtNum(g.rate)} % USt.)` : ''}`, qty: 1, unit: 'LS', price: round2((g.base * val) / 100), vat: g.rate }));
+    } else {
+      const main = [...groups].sort((a, b) => b.base - a.base)[0];
+      items = [{ id: uid(), desc: `${nr}. Abschlag ${ref}`, qty: 1, unit: 'LS', price: round2(val), vat: main.rate }];
+    }
+    const n = newDoc('rechnung', {
+      customerId: d.customerId,
+      subject: d.subject,
+      items,
+      taxMode: d.taxMode,
+      orderReference: d.orderReference,
+      sourceId: d.id,
+      sourceNumber: d.number,
+      invoiceType: 'abschlag',
+      abschlagNo: nr,
+      intro: `Sehr geehrte Damen und Herren,\nfür die bisher erbrachten Leistungen ${ref} berechnen wir Ihnen folgenden Abschlag:`,
+    });
+    await db.put(n);
+    toast(`${nr}. Abschlagsrechnung erstellt`);
+    go('#/beleg/' + n.id);
+  });
+  $('#invType')?.addEventListener('change', async () => {
+    await save();
+    viewDoc(d.id, params);
+  });
+  if ($('#deductions')) {
+    const renderDed = () => {
+      const cands = abschlagCandidates(d);
+      const sel = new Set((d.deductions || []).map((x) => x.id));
+      $('#deductions').innerHTML = cands.length
+        ? `<ul class="list">${cands.map((x) => `<li><label class="ded"><input type="checkbox" data-ded="${x.id}" ${sel.has(x.id) ? 'checked' : ''} ${dis}><span><b>${esc(shortTitle(x))} Nr. ${esc(x.number)}</b> vom ${fmtDate(x.date)}<br><small>netto ${eur(calcTotals(x, c).net)} · brutto ${eur(calcTotals(x, c).gross)}</small></span></label></li>`).join('')}</ul>
+           <div class="totals"><div><span>Abschläge brutto</span><b>${eur(d.prepaid || 0)}</b></div><div class="grand"><span>Noch zu zahlen</span><b>${eur(calcTotals(d, c).gross - (d.prepaid || 0))}</b></div></div>`
+        : '<p class="empty">Keine abgeschlossenen Abschlagsrechnungen für diesen Kunden gefunden.</p>';
+    };
+    renderDed();
+    $('#deductions').addEventListener('change', async (e) => {
+      const cb = e.target.closest('[data-ded]');
+      if (!cb) return;
+      const x = db.get(cb.dataset.ded);
+      d.deductions = (d.deductions || []).filter((y) => y.id !== x.id);
+      if (cb.checked) d.deductions.push(deductionOf(x));
+      d.deductions.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.number || '').localeCompare(b.number || ''));
+      await save();
+      renderDed();
+    });
+  }
   $('#toRechnung') && ($('#toRechnung').onclick = convertTo('rechnung'));
   $('#copy') && ($('#copy').onclick = async () => {
     if (!(await save())) return;
@@ -754,7 +868,7 @@ function viewTemplates() {
     ${field('Beschreibung', 'desc', ed.desc, { type: 'textarea', full: true })}
     ${select('Einheit', 'unit', ed.unit, UNITS.map((u) => ({ value: u.code, label: u.label })))}
     ${field('Einzelpreis netto €', 'price', ed.price != null ? String(ed.price).replace('.', ',') : '', { attrs: 'inputmode="decimal"' })}
-    ${select('USt', 'vat', ed.vat ?? 19, [19, 7, 0].map((v) => ({ value: v, label: v + ' %' })))}
+    ${select('USt', 'vat', ed.vat ?? company().defaultVat ?? 19, vatRates(company(), ed.vat).map((v) => ({ value: v, label: fmtNum(v) + ' %' })))}
     <div class="actions full"><button class="btn primary">Speichern</button><button type="button" class="btn" id="tplCancel">Abbrechen</button>${ed.id ? '<button type="button" class="btn danger" id="tplDel">Löschen</button>' : ''}</div>
   </form>` : ''}
   <input class="search" id="q" placeholder="Vorlagen suchen …" value="${esc(q)}">
@@ -880,7 +994,8 @@ async function viewCompany(id) {
       ${field('Präfix Kundennummer', 'customerPrefix', c.customerPrefix ?? 'K-')}
       ${field('Zahlungsziel (Tage)', 'paymentDays', c.paymentDays ?? 14, { type: 'number' })}
       ${field('Angebot gültig (Tage)', 'offerValidDays', c.offerValidDays ?? 30, { type: 'number' })}
-      ${select('Standard-USt.', 'defaultVat', c.defaultVat ?? 19, [{ value: 19, label: '19 %' }, { value: 7, label: '7 %' }, { value: 0, label: '0 %' }])}
+      ${field('Umsatzsteuersätze in %', 'vatRates', c.vatRates ?? '19; 7; 0', { hint: 'mit Semikolon getrennt, z. B. „19; 7; 0“. Bei einer Steueränderung hier anpassen und Standard-USt. neu wählen. Alte Belege behalten ihren Satz.' })}
+      ${select('Standard-USt.', 'defaultVat', c.defaultVat ?? 19, vatRates(c, c.defaultVat).map((v) => ({ value: v, label: fmtNum(v) + ' %' })))}
     </div>
     <h2>Standardtexte</h2>
     <p class="muted">Mit dem Schalter legst du fest, ob ein Text automatisch in neue Belege übernommen wird.</p>

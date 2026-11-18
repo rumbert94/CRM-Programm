@@ -2,7 +2,7 @@
 // inkl. ZUGFeRD (PDF/A-3b mit eingebetteter factur-x.xml).
 import { PDFDocument, PDFName, PDFHexString, PDFString, AFRelationship, rgb } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-import { calcTotals, fmtDate, unitLabel, KINDS, fmt2, LAYOUT_DEFAULTS, numberItems, round2 } from './util.js';
+import { calcTotals, fmtDate, unitLabel, KINDS, fmt2, LAYOUT_DEFAULTS, numberItems, round2, docTitle } from './util.js';
 import { getFile } from './db.js';
 import { buildCII } from './einvoice.js';
 
@@ -115,7 +115,7 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
   const logo = lh ? null : await loadImage(pdf, company.logoFileId, globalThis.__crmLogo);
   const t = calcTotals(doc, company);
   const kind = KINDS[doc.kind];
-  const title = doc.isCreditNote ? 'Gutschrift' : kind.pdfTitle || kind.label;
+  const title = docTitle(doc);
 
   const FS = 10; // Grundschrift (Arial-kompatibel)
   const LH = 12; // Zeilenabstand
@@ -319,7 +319,24 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
   y -= 5;
   hline(y, 1.2);
   y -= LH + 8;
-  if (Number(doc.prepaid) > 0) {
+  if (doc.deductions?.length) {
+    text('abzüglich bereits berechneter Abschlagsrechnungen:', mm(22), y, { f: bold });
+    y -= LH + 2;
+    for (const x of doc.deductions) {
+      ensure(LH * 2);
+      text(`${x.title || 'Abschlagsrechnung'} Nr. ${x.number} vom ${fmtDate(x.date)}`, mm(22), y);
+      text(`netto ${fmt2(x.net)} + USt. ${fmt2(x.tax)}`, col.price, y, { align: 'right' });
+      text(fmt2(-x.gross), col.total, y, { align: 'right' });
+      y -= LH + 2;
+    }
+    hline(y + 9, 0.5);
+    y -= 4;
+    text('Noch zu zahlen', mm(22), y, { f: bold });
+    text(fmt2(round2(t.gross - doc.prepaid)), col.total, y, { f: bold, align: 'right' });
+    y -= 5;
+    hline(y, 1.2);
+    y -= LH + 8;
+  } else if (Number(doc.prepaid) > 0) {
     text('abzgl. bereits gezahlt', mm(22), y);
     text(fmt2(-doc.prepaid), col.total, y, { align: 'right' });
     y -= LH;
@@ -350,10 +367,10 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
   // Metadaten
   const now = new Date();
   now.setMilliseconds(0);
-  const docTitle = `${title} Nr. ${doc.number || ''}`.trim();
-  pdf.setTitle(docTitle);
+  const metaTitle = `${title} Nr. ${doc.number || ''}`.trim();
+  pdf.setTitle(metaTitle);
   pdf.setAuthor(company.name || '');
-  pdf.setSubject(doc.subject || docTitle);
+  pdf.setSubject(doc.subject || metaTitle);
   pdf.setCreator('Handwerk CRM');
   pdf.setProducer('Handwerk CRM (pdf-lib)');
   pdf.setCreationDate(now);
@@ -362,7 +379,7 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
 
   if (zugferd) {
     const xml = buildCII(doc, company, customer, 'zugferd');
-    await makePdfA3(pdf, a.icc, xml, { title: docTitle, author: company.name || '', subject: doc.subject || docTitle, date: now });
+    await makePdfA3(pdf, a.icc, xml, { title: metaTitle, author: company.name || '', subject: doc.subject || metaTitle, date: now });
   }
   return pdf.save({ useObjectStreams: false });
 }

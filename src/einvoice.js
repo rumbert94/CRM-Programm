@@ -78,6 +78,9 @@ export function buildCII(doc, company, customer, profile = 'zugferd') {
   const isPeriod = doc.serviceMode === 'period' && !!(doc.serviceFrom || doc.serviceTo);
   const notes = [];
   if (doc.subject) notes.push(doc.subject);
+  if (doc.invoiceType === 'abschlag') notes.push(`${doc.abschlagNo || 1}. Abschlagsrechnung${doc.sourceNumber ? ' zu ' + doc.sourceNumber : ''}`);
+  if (doc.invoiceType === 'schluss' && doc.deductions?.length)
+    notes.push('Schlussrechnung. Bereits berechnete Abschläge: ' + doc.deductions.map((x) => `${x.number} (netto ${amt(x.net)}, USt ${amt(x.tax)}, brutto ${amt(x.gross)} EUR)`).join('; '));
   if (company.smallBusiness) notes.push('Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.');
   if (doc.taxMode === 'reverse') notes.push('Steuerschuldnerschaft des Leistungsempfängers (§ 13b UStG).');
   // Pflichtangabe BT-22 für Sitz/Registrierung (optional, hilft bei Prüfern)
@@ -120,7 +123,8 @@ export function buildCII(doc, company, customer, profile = 'zugferd') {
       }</ram:SpecifiedTradeSettlementPaymentMeans>`
     : `<ram:SpecifiedTradeSettlementPaymentMeans><ram:TypeCode>1</ram:TypeCode></ram:SpecifiedTradeSettlementPaymentMeans>`;
 
-  const terms = `<ram:SpecifiedTradePaymentTerms>${tag('Description', doc.paymentTerms || '')}${
+  const termsText = (doc.paymentTerms || '').trim() || (doc.dueDate ? '' : 'Zahlbar sofort ohne Abzug.');
+  const terms = `<ram:SpecifiedTradePaymentTerms>${tag('Description', termsText)}${
     doc.dueDate ? `<ram:DueDateDateTime>${d102(doc.dueDate)}</ram:DueDateDateTime>` : ''
   }</ram:SpecifiedTradePaymentTerms>`;
 
@@ -138,7 +142,7 @@ export function buildCII(doc, company, customer, profile = 'zugferd') {
 <rsm:ExchangedDocumentContext>${businessProcess}<ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>${GUIDELINES[profile]}</ram:ID></ram:GuidelineSpecifiedDocumentContextParameter></rsm:ExchangedDocumentContext>
 <rsm:ExchangedDocument>
 <ram:ID>${x(doc.number)}</ram:ID>
-<ram:TypeCode>${doc.isCreditNote ? '381' : '380'}</ram:TypeCode>
+<ram:TypeCode>${doc.isCreditNote ? '381' : doc.invoiceType === 'abschlag' ? '326' : '380'}</ram:TypeCode>
 <ram:IssueDateTime>${d102(doc.date)}</ram:IssueDateTime>
 ${notes.map((n) => `<ram:IncludedNote><ram:Content>${x(n)}</ram:Content></ram:IncludedNote>`).join('')}
 </rsm:ExchangedDocument>
@@ -167,6 +171,7 @@ ${terms}
 <ram:TaxBasisTotalAmount>${amt(t.net)}</ram:TaxBasisTotalAmount>
 <ram:TaxTotalAmount currencyID="${cur}">${amt(t.tax)}</ram:TaxTotalAmount>
 <ram:GrandTotalAmount>${amt(t.gross)}</ram:GrandTotalAmount>
+${parseNum(doc.prepaid || 0) > 0 ? `<ram:TotalPrepaidAmount>${amt(parseNum(doc.prepaid))}</ram:TotalPrepaidAmount>` : ''}
 <ram:DuePayableAmount>${amt(t.gross - parseNum(doc.prepaid || 0))}</ram:DuePayableAmount>
 </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
 </ram:ApplicableHeaderTradeSettlement>
