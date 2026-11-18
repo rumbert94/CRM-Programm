@@ -9,6 +9,8 @@ import { safeFile } from './util.js';
 const GRAPH = 'https://graph.microsoft.com/v1.0/me/drive/special/approot';
 const SCOPES = ['Files.ReadWrite.AppFolder', 'User.Read'];
 const DATA_FILE = 'crm-data.json';
+// App-Registrierung "Handwerk CRM" (öffentliche Client-ID, kein Geheimnis)
+const DEFAULT_CLIENT_ID = 'f06d5105-0a70-452c-a1a1-17e838a491c9';
 
 export const appUrl = () => location.origin + location.pathname.replace(/index\.html$/, '');
 
@@ -26,7 +28,7 @@ const setState = (p) => {
 export const getState = () => state;
 
 export async function getClientId() {
-  return (await db.getMeta('msClientId')) || import.meta.env?.VITE_MS_CLIENT_ID || '';
+  return (await db.getMeta('msClientId')) || import.meta.env?.VITE_MS_CLIENT_ID || DEFAULT_CLIENT_ID;
 }
 
 export async function init() {
