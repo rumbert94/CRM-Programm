@@ -207,3 +207,7 @@ main.wide { max-width: 1600px; }
   #pvToggle { display: none; }
   .doc-layout.pv-mobile .preview { display: block; position: fixed; inset: 0; z-index: 60; overflow: auto; background: color-mix(in srgb, var(--line) 50%, var(--bg)); padding-top: env(safe-area-inset-top); }
 }
+
+.kind-checks { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; align-items: center; font-size: 0.85rem; color: var(--muted); }
+.kind-checks label { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--text); cursor: pointer; }
+.kind-checks input { width: 20px; height: 20px; min-height: 0; }

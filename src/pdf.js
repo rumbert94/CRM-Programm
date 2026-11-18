@@ -347,7 +347,7 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
 
   if (company.smallBusiness) para('Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.');
   if (doc.taxMode === 'reverse') para('Steuerschuldnerschaft des Leistungsempfängers gemäß § 13b UStG.');
-  if (doc.kind === 'rechnung' && doc.paymentTerms) {
+  if (doc.paymentTerms) {
     para(doc.paymentTerms);
     y -= 8;
   }
@@ -355,7 +355,16 @@ export async function buildPdf(doc, company, customer, { zugferd = false } = {})
     para(doc.outro);
     y -= 8;
   }
-  if (doc.kind === 'rechnung' && company.privateNotice && company.textsOn?.privateNotice !== false && !c.vatId) para(company.privateNotice);
+  const kindOn = (key, def) => {
+    if (company.textsOn?.[key] === false) return false;
+    const v = company.textsKinds?.[key]?.[doc.kind];
+    return v === undefined ? def.includes(doc.kind) : !!v;
+  };
+  if (company.privateNotice && kindOn('privateNotice', ['rechnung']) && !c.vatId) {
+    para(company.privateNotice);
+    y -= 8;
+  }
+  if (company.texts?.extraText && kindOn('extraText', ['angebot', 'auftrag', 'rechnung'])) para(company.texts.extraText);
 
   // Seitenzahlen
   if (pages.length > 1)

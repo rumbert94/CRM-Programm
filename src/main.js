@@ -39,6 +39,13 @@ function vatRates(c, current) {
 
 // Standardtexte: einzeln ein-/ausschaltbar
 const textOn = (c, key) => c?.textsOn?.[key] !== false;
+// Auf welchen Belegarten ein Standardtext erscheint
+const TEXT_KIND_DEFAULTS = { paymentTerms: ['rechnung'], outro: ['angebot', 'auftrag', 'rechnung'], privateNotice: ['rechnung'], extraText: ['angebot', 'auftrag', 'rechnung'] };
+const textForKind = (c, key, kind) => {
+  if (!textOn(c, key)) return false;
+  const v = c?.textsKinds?.[key]?.[kind];
+  return v === undefined ? TEXT_KIND_DEFAULTS[key]?.includes(kind) ?? true : !!v;
+};
 let companyId = localStorage.getItem('companyId') || '';
 
 // ---------- Hilfen ----------
@@ -320,16 +327,17 @@ function newDoc(kind, fields = {}) {
     status: STATUS[kind][0],
     items: [],
     intro: textOn(c, kind + 'Intro') ? c.texts?.[kind + 'Intro'] ?? defaultIntro(kind) : '',
-    outro: textOn(c, 'outro') ? c.texts?.outro ?? 'Mit freundlichen Grüßen' : '',
+    outro: textForKind(c, 'outro', kind) ? c.texts?.outro ?? 'Mit freundlichen Grüßen' : '',
     ...fields,
   };
   if (kind === 'angebot') d.validUntil = addDays(date, c.offerValidDays || 30);
   if (kind === 'rechnung') {
     d.dueDate = addDays(date, c.paymentDays ?? 14);
     d.serviceDate = d.serviceDate || date;
-    d.paymentTerms = paymentText(c, d.dueDate);
+    d.paymentTerms = paymentText(c, d.dueDate, 'rechnung');
   } else {
     d.number = nextNumber(kind, c);
+    d.paymentTerms = paymentText(c, null, kind);
   }
   return d;
 }
@@ -341,8 +349,16 @@ const defaultIntro = (kind) =>
     rechnung: 'Sehr geehrte Damen und Herren,\nfür die ausgeführten Arbeiten berechnen wir Ihnen:',
   })[kind];
 
-const paymentText = (c, due) =>
-  !textOn(c, 'paymentTerms') ? '' : (c.texts?.paymentTerms || 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.').replace('{FAELLIG}', fmtDate(due));
+// {FAELLIG} = Datum (nur Rechnung), {ZIEL} = "14 Tage"; auf Angebot/Auftrag wird
+// "bis zum {FAELLIG}" zu "innerhalb von 14 Tagen nach Rechnungsdatum"
+function paymentText(c, due, kind = 'rechnung') {
+  if (!textForKind(c, 'paymentTerms', kind)) return '';
+  const days = c.paymentDays ?? 14;
+  let t = c.texts?.paymentTerms || 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.';
+  t = t.replace(/\{ZIEL\}/g, `${days} Tage`);
+  if (due) return t.replace(/\{FAELLIG\}/g, fmtDate(due));
+  return t.replace(/bis (zum|spätestens) \{FAELLIG\}/g, `innerhalb von ${days} Tagen nach Rechnungsdatum`).replace(/\{FAELLIG\}/g, `${days} Tage nach Rechnungsdatum`);
+}
 
 // ---------- Abschläge ----------
 const relatedAbschlaege = (src) =>
@@ -467,7 +483,7 @@ async function viewDoc(id, params, kindForNew) {
   ${d.kind !== 'rechnung' ? abschlagOverview(d) : ''}
 
   <form id="f2" class="grid">
-    ${d.kind === 'rechnung' ? field('Zahlungsbedingungen', 'paymentTerms', d.paymentTerms, { type: 'textarea', full: true, attrs: dis }) : ''}
+    ${field('Zahlungsbedingungen', 'paymentTerms', d.paymentTerms, { type: 'textarea', full: true, attrs: dis })}
     ${field('Schlusstext', 'outro', d.outro, { type: 'textarea', full: true, attrs: dis })}
   </form>
 
@@ -619,7 +635,7 @@ async function viewDoc(id, params, kindForNew) {
   }
   $('[name=dueDate]')?.addEventListener('change', (e) => {
     const pt = $('[name=paymentTerms]');
-    if (pt && !locked) pt.value = paymentText(c, e.target.value);
+    if (pt && !locked) pt.value = paymentText(c, e.target.value, 'rechnung');
   });
 
   const customer = () => d.customerSnapshot || db.get(d.customerId);
@@ -869,9 +885,19 @@ function openPdf(bytes, name) {
 
 function textField(c, label, key, name, value, hint = '') {
   const on = textOn(c, key);
+  const kinds = TEXT_KIND_DEFAULTS[key]
+    ? `<div class="kind-checks"><span>erscheint auf:</span>${Object.keys(KINDS)
+        .map((k) => {
+          const v = c?.textsKinds?.[key]?.[k];
+          const checked = v === undefined ? TEXT_KIND_DEFAULTS[key].includes(k) : !!v;
+          return `<label><input type="checkbox" name="textsKinds.${key}.${k}" ${checked ? 'checked' : ''}> ${KINDS[k].plural}</label>`;
+        })
+        .join('')}</div>`
+    : '';
   return `<div class="field full ${on ? '' : 'off'}" data-textfield>
     <div class="switch-row"><span>${esc(label)}</span>
       <label class="switch"><input type="checkbox" name="textsOn.${key}" ${on ? 'checked' : ''}><span class="track"></span><span class="sw-label">${on ? 'ein' : 'aus'}</span></label></div>
+    ${kinds}
     <textarea name="${name}" rows="3">${esc(value)}</textarea>
     ${hint ? `<small>${hint}</small>` : ''}
   </div>`;
@@ -1099,9 +1125,10 @@ async function viewCompany(id) {
       ${textField(c, 'Einleitung Angebot', 'angebotIntro', 'texts.angebotIntro', t.angebotIntro ?? defaultIntro('angebot'))}
       ${textField(c, 'Einleitung Auftrag', 'auftragIntro', 'texts.auftragIntro', t.auftragIntro ?? defaultIntro('auftrag'))}
       ${textField(c, 'Einleitung Rechnung', 'rechnungIntro', 'texts.rechnungIntro', t.rechnungIntro ?? defaultIntro('rechnung'))}
-      ${textField(c, 'Zahlungsbedingungen', 'paymentTerms', 'texts.paymentTerms', t.paymentTerms ?? 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.', '{FAELLIG} wird durch das Fälligkeitsdatum ersetzt')}
+      ${textField(c, 'Zahlungsbedingungen', 'paymentTerms', 'texts.paymentTerms', t.paymentTerms ?? 'Bitte überweisen Sie den Rechnungsbetrag bis zum {FAELLIG} ohne Abzug auf unser Konto.', '{FAELLIG} = Fälligkeitsdatum der Rechnung, {ZIEL} = Zahlungsziel („14 Tage“). Auf Angeboten/Aufträgen wird „bis zum {FAELLIG}“ automatisch zu „innerhalb von 14 Tagen nach Rechnungsdatum“.')}
       ${textField(c, 'Schlusstext', 'outro', 'texts.outro', t.outro ?? 'Mit freundlichen Grüßen')}
       ${textField(c, 'Hinweis auf Rechnungen an Privatkunden', 'privateNotice', 'privateNotice', c.privateNotice ?? 'Bei Leistungen an einem Grundstück: Sie sind gesetzlich verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b UStG).', 'wird nur gedruckt, wenn der Kunde keine USt-IdNr. hat')}
+      ${textField(c, 'Zusatztext (z. B. AGB, Eigentumsvorbehalt)', 'extraText', 'texts.extraText', t.extraText ?? '')}
     </div>
     <div class="actions sticky"><button class="btn primary">Speichern</button>
       <button type="button" class="btn" id="preview">Probe-PDF (nur Layout, keine E-Rechnung)</button>
@@ -1112,7 +1139,7 @@ async function viewCompany(id) {
 
   const collect = () => {
     const data = formData($('#f'));
-    const out = { ...c, layout2: { ...L }, numbering: structuredClone(c.numbering || {}), texts: { ...(c.texts || {}) }, textsOn: { ...(c.textsOn || {}) } };
+    const out = { ...c, layout2: { ...L }, numbering: structuredClone(c.numbering || {}), texts: { ...(c.texts || {}) }, textsOn: { ...(c.textsOn || {}) }, textsKinds: structuredClone(c.textsKinds || {}) };
     for (const [k, v] of Object.entries(data)) {
       const parts = k.split('.');
       let o = out;
@@ -1184,7 +1211,7 @@ async function viewCompany(id) {
     const cc = collect();
     const demo = {
       kind: 'rechnung', number: nextNumber('rechnung', { ...cc, id: c.id }), date: today(), serviceDate: today(), dueDate: addDays(today(), cc.paymentDays),
-      subject: 'Musterrechnung zur Layoutprüfung', intro: cc.texts.rechnungIntro, outro: cc.texts.outro, paymentTerms: paymentText(cc, addDays(today(), cc.paymentDays)),
+      subject: 'Musterrechnung zur Layoutprüfung', intro: cc.texts.rechnungIntro, outro: cc.texts.outro, paymentTerms: paymentText(cc, addDays(today(), cc.paymentDays), 'rechnung'),
       items: [
         { title: 'Arbeitszeit Geselle', desc: 'Montagearbeiten vor Ort', qty: 4, unit: 'HUR', price: 58, vat: 19 },
         { title: 'Material', desc: 'Kleinmaterial, Befestigungen', qty: 1, unit: 'LS', price: 42.5, vat: 19 },
