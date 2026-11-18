@@ -3,6 +3,7 @@ import * as db from './db.js';
 import * as sync from './sync.js';
 const buildPdf = async (...a) => (await import('./pdf.js')).buildPdf(...a);
 import { buildCII, checkEInvoice } from './einvoice.js';
+import { dashboardHtml, wireDashboard } from './dashboard.js';
 import { initReports, REGIE_LEGAL_DEFAULT, TRAVEL } from './report.js';
 import { getAiKey, setAiKey } from './ai-key.js';
 import {
@@ -268,8 +269,10 @@ function viewHome() {
     <a class="stat" data-k="angebot" href="#/belege/angebot?f=offen"><span>Offene Angebote</span><b>${eur(sum(angebote))}</b><small>${angebote.length} ${angebote.length === 1 ? 'Angebot' : 'Angebote'}</small></a>
     <a class="stat" data-k="auftrag" href="#/belege/auftrag"><span>Laufende Aufträge</span><b>${eur(sum(auftraege))}</b><small>${auftraege.length} ${auftraege.length === 1 ? 'Auftrag' : 'Aufträge'}</small></a>
   </div>
+  ${dashboardHtml(docs, c, customerName)}
   <h2 class="sec">Zuletzt bearbeitet</h2>
   ${docList(recent)}`, 'home');
+  wireDashboard($('main'));
 }
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
