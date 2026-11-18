@@ -386,3 +386,8 @@ h2.sec { margin: 0 0 0.7rem; }
   .irow .i-del { grid-row: 1; grid-column: 3; }
   .wrow { grid-template-columns: minmax(0, 1fr) 100px 32px; }
 }
+
+.btn.yellow { background: #fcd34d; border-color: #fcd34d; color: #1d2330; }
+.btn.yellow:hover:not(:disabled) { background: #fde68a; border-color: #fde68a; }
+.versions { margin-top: 0.8rem; border-top: 1px solid var(--line); padding-top: 0.6rem; font-size: 0.9rem; }
+.versions .ver { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; color: var(--muted); }

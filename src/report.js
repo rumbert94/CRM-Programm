@@ -188,7 +188,7 @@ export function initReports(ctx) {
       shell(`
       <div class="page-head"><div><h1>Regiebericht ${r.number ? 'Nr. ' + esc(r.number) : ''}</h1><p class="sub">${esc(c.name)}</p></div>
         <span class="badge ${esc(r.status)}">${esc(r.status)}</span></div>
-      ${locked ? '<p class="info">Unterschrieben – der Bericht ist gesperrt. Zum Ändern zuerst die Unterschrift entfernen.</p>' : ''}
+      ${locked ? '<p class="info">Unterschrieben – der Bericht ist gesperrt. Mit „Bericht ändern“ kannst du ihn wieder bearbeiten.</p>' : r.versions?.length ? '<p class="info">Der Bericht wurde nach der Unterschrift geändert. Bitte den Kunden neu unterschreiben lassen. Die alte Fassung bleibt unten gespeichert.</p>' : ''}
       <form id="rf" class="report">
         <section class="rcard"><h3>Kunde & Vorhaben</h3>
           <div class="grid">
@@ -232,9 +232,12 @@ export function initReports(ctx) {
           ${sigBox(r.monteurSig, 'Monteur')}
           <div class="actions">
             ${r.signature ? '' : '<button type="button" class="btn primary big" id="signCust">✍ Kunde unterschreiben lassen</button>'}
-            ${r.monteurSig ? '' : '<button type="button" class="btn" id="signMon">✍ Monteur unterschreibt</button>'}
-            ${r.signature && r.status !== 'Abgerechnet' ? '<button type="button" class="btn danger" id="unsign">Unterschrift entfernen</button>' : ''}
+            ${r.monteurSig ? '' : '<button type="button" class="btn yellow" id="signMon">✍ Monteur unterschreibt</button>'}
+            ${r.signature ? '<button type="button" class="btn" id="unsign">✎ Bericht ändern</button>' : ''}
           </div>
+          ${(r.versions || []).length ? `<div class="versions"><b>Frühere Fassungen</b>${r.versions
+            .map((v, i) => `<div class="ver"><span>Fassung ${i + 1} · unterschrieben von ${esc(v.signature?.name || '–')} am ${new Date(v.signature?.at || v.at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}</span><button type="button" class="link" data-ver="${i}">PDF</button></div>`)
+            .join('')}</div>` : ''}
         </section>
       </form>
       <div class="actions sticky">
@@ -394,7 +397,7 @@ export function initReports(ctx) {
           r.signature = sig;
           r.number = r.number || nextReportNumber(c);
           r.customerSnapshot = { ...k };
-          r.status = 'Unterschrieben';
+          r.status = r.invoiceId && db.get(r.invoiceId) ? 'Abgerechnet' : 'Unterschrieben';
           r.hash = await contentHash(r);
           r = await db.put(r);
           toast('Unterschrift gespeichert – Bericht ' + r.number);
@@ -411,14 +414,28 @@ export function initReports(ctx) {
           render();
         });
       });
+      // Ändern nach der Unterschrift: unterschriebene Fassung bleibt als Version erhalten,
+      // die Unterschriften werden für die neue Fassung zurückgesetzt
       $('#unsign') && ($('#unsign').onclick = async () => {
-        if (!confirm('Unterschrift des Kunden entfernen? Der Bericht muss danach neu unterschrieben werden.')) return;
-        delete r.signature;
-        delete r.hash;
-        r.status = 'Entwurf';
-        r = await db.put(r);
+        const inv = r.invoiceId && db.get(r.invoiceId);
+        const msg =
+          'Bericht ändern?\n\nDie Unterschriften gelten nur für die bisherige Fassung. Diese bleibt gespeichert, die geänderte Fassung muss der Kunde neu unterschreiben.' +
+          (inv ? `\n\nHinweis: Die Rechnung ${inv.number || '(Entwurf)'} wird nicht automatisch angepasst.` : '');
+        if (!confirm(msg)) return;
+        const { versions, invoiceId, ...snap } = r;
+        const next = { ...r, versions: [...(versions || []), { ...structuredClone(snap), at: Date.now() }], status: 'Entwurf' };
+        for (const k of ['signature', 'monteurSig', 'hash']) Reflect.deleteProperty(next, k);
+        r = await db.put(next);
+        toast('Bericht kann jetzt geändert werden');
         render();
       });
+      $$('[data-ver]').forEach((b) => (b.onclick = async () => {
+        const i = Number(b.dataset.ver);
+        const v = r.versions[i];
+        const { buildReportPdf } = await import('./reportpdf.js');
+        const bytes = await buildReportPdf({ ...v, versionNo: i + 1, superseded: true }, company(), v.customerSnapshot || db.get(v.customerId) || {});
+        download(bytes, safeFile(reportFileName(v)) + `-Fassung${i + 1}.pdf`, 'application/pdf');
+      }));
       $('#rPdf').onclick = async () => {
         collect();
         if (!locked) await save();

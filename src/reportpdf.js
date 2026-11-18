@@ -77,7 +77,8 @@ export async function buildReportPdf(r, company, customer) {
 
   // Kopf
   text(`Regiebericht${r.number ? ' Nr. ' + r.number : ' (Entwurf)'}`, left, y - 8, { f: bold, size: 15 });
-  text('Arbeitsauftrag / -protokoll', left, y - 22, { size: 9, color: grey });
+  const fassung = r.superseded ? `Fassung ${r.versionNo} – ersetzt durch eine spätere Fassung` : r.versions?.length ? `Fassung ${r.versions.length + 1} (geänderte Fassung)` : '';
+  text('Arbeitsauftrag / -protokoll' + (fassung ? ' · ' + fassung : ''), left, y - 22, { size: 9, color: grey });
   y = Math.min(y - 40, H - (L.logoY + L.logoH + 6) * MM);
 
   // Auftraggeber + Eckdaten
