@@ -705,3 +705,11 @@ nav.side, .nav-collapsed nav.side { padding-bottom: 1rem; }
 .side-company, .nav-collapsed .side-company { height: 64px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; margin-bottom: 0.6rem; align-items: center; }
 nav.side .side-company, .nav-collapsed nav.side .side-company { flex: none; height: 64px; min-height: 64px; }
 nav.side .side-tools { flex: none; }
+/* ===== Farbwunsch 19.11. nachmittags: Angebot/Auftrag/Rechnung in Orange- und Rot-Pastell ===== */
+:root { --t-angebot: #ffe0c2; --t-auftrag: #ffc49b; --t-rechnung: #ffa3a3; --c-angebot: #b8621b; --c-auftrag: #e8590c; --c-rechnung: #e03131; }
+:root[data-theme="dark"] { --c-angebot: #ffc078; --c-auftrag: #ff922b; --c-rechnung: #ff8787; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-angebot: #ffc078; --c-auftrag: #ff922b; --c-rechnung: #ff8787; } }
+/* Kunde hellblau-pastell, Regiebericht grün-pastell */
+:root { --t-kunden: #a5d8ff; --t-bericht: #b2f2bb; --c-kunden: #1c7ed6; --c-bericht: #2f9e44; }
+:root[data-theme="dark"] { --c-kunden: #74c0fc; --c-bericht: #69db7c; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-kunden: #74c0fc; --c-bericht: #69db7c; } }
