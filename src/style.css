@@ -652,3 +652,22 @@ nav.side .nav-group[aria-expanded="false"] .gchev { transform: none; }
   .nav-collapsed nav.side a.active::before { left: -0.5rem; }
 }
 @media (max-width: 899px) { .collapse-btn { display: none; } }
+
+/* ===== Fußleiste der Navigation: feste Reihenfolge, Einklappen-Knopf immer an derselben Stelle ===== */
+.side-foot, .nav-collapsed .side-foot { flex-direction: column; align-items: flex-start; gap: 0.5rem; padding-left: 0.3rem; }
+.nav-collapsed nav.side .side-foot { padding-left: 0.6rem; }
+.side-foot button { width: 46px; height: 46px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 14px; }
+.side-foot .sync, .side-foot .sync.fehler, header.top .sync, header.top .sync.fehler { background: var(--card); color: var(--text); }
+.collapse-btn { font-size: 1.2rem; line-height: 1; }
+.theme-ic { width: 24px; height: 24px; }
+.sync-ic { width: 34px; height: 34px; overflow: visible; }
+.sync-ic .cloud { fill: color-mix(in srgb, var(--muted) 30%, var(--card)); stroke: color-mix(in srgb, var(--muted) 70%, var(--card)); stroke-width: 1.2; stroke-linejoin: round; }
+header.top .sync { padding: 0.2rem 0.5rem; }
+header.top .sync-ic { width: 32px; height: 32px; }
+.sync-ic .spin { transform-origin: 17px 17px; animation: syncspin 1s linear infinite; }
+@keyframes syncspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sync-ic .spin { animation: none; } }
+/* Fußleiste klebt unten, auch wenn die Leiste scrollt – Knöpfe bleiben an fester Stelle */
+nav.side, .nav-collapsed nav.side { padding-bottom: 0; }
+.side-foot { position: sticky; bottom: 0; background: var(--bg); padding-bottom: 1rem; margin-top: auto; z-index: 2; }
+@media (max-width: 899px) { .side-foot { position: static; } }

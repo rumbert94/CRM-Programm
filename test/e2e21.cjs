@@ -1,0 +1,31 @@
+const { chromium } = require('playwright');
+const fs = require('fs');
+const U = 'http://localhost:4173/';
+(async () => {
+  const b = await chromium.launch();
+  const errs = [];
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })).newPage();
+  p.on('pageerror', (e) => errs.push(e.stack));
+  await p.goto(U); await p.click('text=Firma anlegen');
+  await p.fill('[name=name]', 'Tinus Gebäudetechnik'); await p.fill('[name=city]', 'Oranienburg');
+  await p.click('button:has-text("Speichern")'); await p.waitForURL(/einstellungen/);
+  await p.goto(U + '#/'); await p.waitForTimeout(400);
+  const pos = async () => p.locator('#collapseBtn').evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y)]; });
+  const a = await pos();
+  await p.locator('.side-foot').screenshot({ path: 'test/shots/foot-open.png' });
+  await p.click('#collapseBtn'); await p.waitForTimeout(300);
+  const c = await pos();
+  await p.locator('.side-foot').screenshot({ path: 'test/shots/foot-closed.png' });
+  await p.click('#themeBtn'); await p.waitForTimeout(200);
+  await p.locator('.side-foot').screenshot({ path: 'test/shots/foot-dark.png' });
+  const d = await pos();
+  // alle Sync-Zustände nebeneinander
+  const src = fs.readFileSync('src/main.js', 'utf8');
+  const fn = src.slice(src.indexOf('function syncIcon'), src.indexOf('// Hell/Dunkel: lila Mond'));
+  await p.evaluate((fn) => { const f = new Function(fn + '; return syncIcon;')(); const box = document.createElement('div'); box.id = 'demo'; box.style.cssText = 'position:fixed;top:20px;left:300px;display:flex;gap:12px;background:var(--bg);padding:12px;z-index:999'; box.innerHTML = ['ok', 'läuft', 'fehler', 'bereit'].map((s) => `<button class="sync" style="width:46px;height:46px;border-radius:14px;border:1px solid var(--line);background:var(--card);display:inline-flex;align-items:center;justify-content:center">${f(s)}</button>`).join(''); document.body.append(box); }, fn);
+  await p.locator('#demo').screenshot({ path: 'test/shots/sync-states-dark.png' });
+  await p.click('#themeBtn'); await p.waitForTimeout(200);
+  await p.locator('#demo').screenshot({ path: 'test/shots/sync-states.png' });
+  console.log(JSON.stringify({ a, c, d, errs }));
+  await b.close();
+})();

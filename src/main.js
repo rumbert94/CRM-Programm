@@ -233,9 +233,9 @@ function shell(content, active = '') {
       </div>
       ${navHtml}
       <div class="side-foot">
+        <button class="sync ${esc(s.status)}" id="syncBtn" title="${esc(s.message)}" aria-label="Synchronisieren">${syncIcon(s.status)}</button>
+        <button class="theme-btn" id="themeBtn" title="Hell / Dunkel umschalten" aria-label="Hell / Dunkel umschalten">${themeIcon()}</button>
         <button class="collapse-btn" id="collapseBtn" title="Navigation ein-/ausklappen" aria-label="Navigation ein-/ausklappen">${navCollapsed() ? '»' : '«'}</button>
-        <button class="theme-btn" id="themeBtn" title="Hell / Dunkel umschalten" aria-label="Hell / Dunkel umschalten">${isDark() ? '☀' : '☾'}</button>
-        <button class="sync ${esc(s.status)}" id="syncBtn" title="${esc(s.message)}">${syncIcon(s.status)}</button>
       </div>
     </nav>
     <div class="nav-backdrop" id="navBackdrop"></div>
@@ -274,14 +274,27 @@ function shell(content, active = '') {
   };
   $('#themeBtn').onclick = (e) => {
     setTheme(isDark() ? 'light' : 'dark');
-    e.currentTarget.textContent = isDark() ? '☀' : '☾';
+    e.currentTarget.innerHTML = themeIcon();
   };
   $$('.sync').forEach((b) => (b.onclick = () => (sync.isConnected() ? sync.sync() : go('#/einstellungen'))));
 }
 
+// Sync-Symbol: große Wolke im Hintergrund, davor grüner Haken (synchronisiert), rotes X (nicht möglich) oder Pfeile (läuft)
 function syncIcon(status) {
-  const label = { ok: '☁ ✓', 'läuft': '☁ …', fehler: '☁ !', offline: '☁ ⨯', bereit: '☁', aus: '☁ –' }[status] || '☁';
-  return label;
+  const mark = {
+    ok: '<circle cx="17" cy="17" r="6.2" fill="#16a34a"/><path d="m14.2 17.1 2 2 3.8-4" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+    fehler: '<circle cx="17" cy="17" r="6.2" fill="#dc2626"/><path d="m14.6 14.6 4.8 4.8m0-4.8-4.8 4.8" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/>',
+    'läuft': '<circle cx="17" cy="17" r="6.2" fill="#2563eb"/><g class="spin"><path d="M14.3 17a2.7 2.7 0 0 1 4.6-1.9" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><path d="m19.3 13.6-.2 1.8-1.8-.3" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M19.7 17a2.7 2.7 0 0 1-4.6 1.9" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></g>',
+  };
+  mark.offline = mark.fehler;
+  mark.aus = mark.fehler;
+  return `<svg class="sync-ic" viewBox="0 0 24 24" aria-hidden="true"><path class="cloud" d="M7 19h10.5a4.5 4.5 0 0 0 .9-8.9A6 6 0 0 0 6.6 9.2 5 5 0 0 0 7 19z"/>${mark[status] || ''}</svg>`;
+}
+// Hell/Dunkel: lila Mond (zu Dunkel wechseln) bzw. gelbe Sonne (zu Hell wechseln)
+function themeIcon() {
+  return isDark()
+    ? '<svg class="theme-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.6" fill="#facc15"/><g stroke="#f59e0b" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></g></svg>'
+    : '<svg class="theme-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 1 1 9.4 3.5a7 7 0 0 0 11.1 11.1z" fill="#8b5cf6"/></svg>';
 }
 
 // ---------- Übersicht ----------
@@ -1961,7 +1974,7 @@ sync.onStatus((s) => {
   $$('.sync').forEach((b) => {
     b.className = 'sync ' + s.status;
     b.title = s.message;
-    b.textContent = syncIcon(s.status);
+    b.innerHTML = syncIcon(s.status);
   });
 });
 window.addEventListener('online', () => sync.sync());
