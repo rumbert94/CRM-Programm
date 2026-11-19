@@ -746,3 +746,6 @@ main .searchbox { background: var(--card); }
   :root:not([data-theme="light"]) { --panel: #0d1014; }
   :root:not([data-theme="light"]) main { --card: #1f252e; --line: #343c48; }
 }
+/* Dunkelmodus: Schrift der 6 Schaltflächen weiß */
+:root[data-theme="dark"][data-colors="farbig"] .tiles6 .tile[data-k], :root[data-theme="dark"][data-colors="farbig"] .tiles6 .tile[data-k] * { color: #fff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"])[data-colors="farbig"] .tiles6 .tile[data-k], :root:not([data-theme="light"])[data-colors="farbig"] .tiles6 .tile[data-k] * { color: #fff; } }
