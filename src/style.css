@@ -728,3 +728,13 @@ main .searchbox { background: var(--card); }
 .tiles6 .tile { transition: background 0.15s, box-shadow 0.15s, filter 0.15s; }
 :root .tiles6 .tile:hover { filter: brightness(1.08); }
 :root[data-colors="farbig"] .tiles6 .tile[data-k]:hover, :root[data-colors="farbig"] .tiles6 .tile.tile-memo[data-k]:hover { filter: none; background: color-mix(in srgb, var(--t) 55%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--t) 45%, transparent), 0 0 20px 2px color-mix(in srgb, var(--t) 85%, transparent); }
+
+/* ===== 19.11.: Dunkelmodus – Schaltflächen gedämpft (blenden nicht) ===== */
+:root[data-theme="dark"][data-colors="farbig"] .tiles6 .tile[data-k] { background: color-mix(in srgb, var(--t) 30%, #161b26); color: color-mix(in srgb, var(--t) 70%, #fff); border-color: color-mix(in srgb, var(--t) 45%, #161b26); box-shadow: none; }
+:root[data-theme="dark"][data-colors="farbig"] .tiles6 .tile[data-k]:hover, :root[data-theme="dark"][data-colors="farbig"] .tiles6 .tile.tile-memo[data-k]:hover { background: color-mix(in srgb, var(--t) 45%, #161b26); box-shadow: 0 0 0 2px color-mix(in srgb, var(--t) 35%, transparent), 0 0 16px 1px color-mix(in srgb, var(--t) 40%, transparent); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-colors="farbig"] .tiles6 .tile[data-k] { background: color-mix(in srgb, var(--t) 30%, #161b26); color: color-mix(in srgb, var(--t) 70%, #fff); border-color: color-mix(in srgb, var(--t) 45%, #161b26); box-shadow: none; }
+  :root:not([data-theme="light"])[data-colors="farbig"] .tiles6 .tile[data-k]:hover, :root:not([data-theme="light"])[data-colors="farbig"] .tiles6 .tile.tile-memo[data-k]:hover { background: color-mix(in srgb, var(--t) 45%, #161b26); box-shadow: 0 0 0 2px color-mix(in srgb, var(--t) 35%, transparent), 0 0 16px 1px color-mix(in srgb, var(--t) 40%, transparent); }
+}
+:root[data-theme="dark"] { --t-angebot: #ffb36b; --t-auftrag: #ff8a3d; --t-rechnung: #ff7070; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --t-angebot: #ffb36b; --t-auftrag: #ff8a3d; --t-rechnung: #ff7070; } }
