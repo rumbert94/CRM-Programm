@@ -12,12 +12,12 @@ const U = 'http://localhost:4173/';
   await p.goto(U + '#/'); await p.waitForTimeout(400);
   const pos = async () => p.locator('#collapseBtn').evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y)]; });
   const a = await pos();
-  await p.locator('.side-foot').screenshot({ path: 'test/shots/foot-open.png' });
+  await p.locator('.side-tools').screenshot({ path: 'test/shots/foot-open.png' });
   await p.click('#collapseBtn'); await p.waitForTimeout(300);
   const c = await pos();
-  await p.locator('.side-foot').screenshot({ path: 'test/shots/foot-closed.png' });
+  await p.locator('.side-tools').screenshot({ path: 'test/shots/foot-closed.png' });
   await p.click('#themeBtn'); await p.waitForTimeout(200);
-  await p.locator('.side-foot').screenshot({ path: 'test/shots/foot-dark.png' });
+  await p.locator('.side-tools').screenshot({ path: 'test/shots/foot-dark.png' });
   const d = await pos();
   // alle Sync-Zustände nebeneinander
   const src = fs.readFileSync('src/main.js', 'utf8');

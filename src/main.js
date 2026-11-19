@@ -231,12 +231,12 @@ function shell(content, active = '') {
           <small>${esc(cur?.city || 'Handwerk CRM')}</small>
         </div>
       </div>
-      ${navHtml}
-      <div class="side-foot">
+      <div class="side-tools">
+        <button class="collapse-btn" id="collapseBtn" title="Navigation ein-/ausklappen" aria-label="Navigation ein-/ausklappen">${navCollapsed() ? '»' : '«'}</button>
         <button class="sync ${esc(s.status)}" id="syncBtn" title="${esc(s.message)}" aria-label="Synchronisieren">${syncIcon(s.status)}</button>
         <button class="theme-btn" id="themeBtn" title="Hell / Dunkel umschalten" aria-label="Hell / Dunkel umschalten">${themeIcon()}</button>
-        <button class="collapse-btn" id="collapseBtn" title="Navigation ein-/ausklappen" aria-label="Navigation ein-/ausklappen">${navCollapsed() ? '»' : '«'}</button>
       </div>
+      ${navHtml}
     </nav>
     <div class="nav-backdrop" id="navBackdrop"></div>
     <main>${content}</main>

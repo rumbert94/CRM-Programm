@@ -691,3 +691,17 @@ nav.side a .ic { width: 40px; height: 40px; padding: 7px; stroke-width: 1.9; }
 .theme-ic { width: 28px; height: 28px; }
 .sync-ic { width: 38px; height: 38px; }
 .collapse-btn { font-size: 1.5rem; }
+
+/* ===== Knöpfe oben zwischen Firma und Übersicht (19.11.) ===== */
+.side-tools { display: flex; gap: 0.5rem; padding: 0 0 0.8rem 0.3rem; }
+.side-tools button { width: 46px; height: 46px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 14px; background: var(--card); color: var(--text); border: 1px solid var(--line); font: inherit; cursor: pointer; }
+.side-tools .sync, .side-tools .sync.fehler { background: var(--card); color: var(--text); }
+.side-tools .collapse-btn { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+nav.side, .nav-collapsed nav.side { padding-bottom: 1rem; }
+@media (min-width: 900px) {
+  .nav-collapsed .side-tools { flex-direction: column; padding-left: 0.6rem; }
+}
+@media (max-width: 899px) { .side-tools .collapse-btn { display: none; } }
+.side-company, .nav-collapsed .side-company { height: 64px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; margin-bottom: 0.6rem; align-items: center; }
+nav.side .side-company, .nav-collapsed nav.side .side-company { flex: none; height: 64px; min-height: 64px; }
+nav.side .side-tools { flex: none; }
