@@ -723,3 +723,8 @@ main { background: var(--panel); border-color: color-mix(in srgb, var(--line) 80
 main .searchbox { background: var(--card); }
 /* dünner schwarzer Rahmen um die 6 Schaltflächen (19.11.) */
 :root .tiles6 .tile, :root[data-colors="farbig"] .tiles6 .tile[data-k] { border: 1px solid #1d2330; box-sizing: border-box; }
+
+/* ===== 19.11.: Schaltflächen leuchten beim Überfahren auf (heller statt dunkler) ===== */
+.tiles6 .tile { transition: background 0.15s, box-shadow 0.15s, filter 0.15s; }
+:root .tiles6 .tile:hover { filter: brightness(1.08); }
+:root[data-colors="farbig"] .tiles6 .tile[data-k]:hover, :root[data-colors="farbig"] .tiles6 .tile.tile-memo[data-k]:hover { filter: none; background: color-mix(in srgb, var(--t) 55%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--t) 45%, transparent), 0 0 20px 2px color-mix(in srgb, var(--t) 85%, transparent); }
