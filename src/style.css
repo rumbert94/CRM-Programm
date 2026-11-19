@@ -713,3 +713,4 @@ nav.side .side-tools { flex: none; }
 :root { --t-kunden: #a5d8ff; --t-bericht: #b2f2bb; --c-kunden: #1c7ed6; --c-bericht: #2f9e44; }
 :root[data-theme="dark"] { --c-kunden: #74c0fc; --c-bericht: #69db7c; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-kunden: #74c0fc; --c-bericht: #69db7c; } }
+:root { --t-angebot: #ffeedd; }
