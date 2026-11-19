@@ -598,3 +598,17 @@ h2.sec { margin: 0 0 0.7rem; }
   .tile-memo span { align-items: center; text-align: center; }
   .memo-at { display: none; }
 }
+
+/* Übersicht: 6 gleich große Schaltflächen (2 Spalten × 3 Reihen) */
+.tiles.tiles6 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; }
+.tiles.tiles6 .tile { min-height: 96px; margin: 0; width: auto; }
+[data-colors="farbig"] .tiles6 .tile[data-k="bericht"] { background: linear-gradient(120deg, #1e3a8a 0%, var(--c-bericht) 100%); }
+:root[data-theme="dark"][data-colors="farbig"] .tiles6 .tile[data-k="bericht"] { background: linear-gradient(120deg, #8fa6ef 0%, var(--c-bericht) 100%); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"])[data-colors="farbig"] .tiles6 .tile[data-k="bericht"] { background: linear-gradient(120deg, #8fa6ef 0%, var(--c-bericht) 100%); } }
+.tiles6 .tile-memo span { align-items: center; text-align: center; }
+.tiles6 .tile-memo small { display: block; }
+@media (max-width: 520px) {
+  .tiles.tiles6 { gap: 0.6rem; }
+  .tiles.tiles6 .tile { font-size: 0.98rem; padding: 0.8rem; flex-direction: column; gap: 0.4rem; text-align: center; min-height: 104px; }
+}
+.list + .dash-card { margin-top: 1.2rem; }

@@ -1,4 +1,4 @@
-// Dashboard auf der Übersicht: Umsatz je Monat (mit Vorjahr), Top-Kunden, offene Posten nach Fälligkeit, Angebotsquote.
+// Dashboard auf der Übersicht: Umsatz je Monat (mit Vorjahr), offene Posten nach Fälligkeit, Angebotsquote.
 // Reines HTML/CSS (skaliert auf Handy und Tablet), Tooltips per Hover oder Antippen, Tabellenansicht für den Monatsvergleich.
 import { calcTotals, esc, eur, today } from './util.js';
 
@@ -31,17 +31,12 @@ export function dashboardHtml(docs, c, customerName) {
   const byMonth = { [Y]: Array(12).fill(0), [Y - 1]: Array(12).fill(0) };
   let ytd = 0;
   let ytdPrev = 0;
-  const custSum = new Map();
   for (const d of inv) {
     const y = Number(d.date.slice(0, 4));
     const m = Number(d.date.slice(5, 7)) - 1;
     const v = revenueOf(d, c);
     if (byMonth[y]) byMonth[y][m] += v;
-    if (y === Y) {
-      ytd += v;
-      const name = d.customerSnapshot?.name || customerName(d.customerId) || 'ohne Kunde';
-      custSum.set(name, (custSum.get(name) || 0) + v);
-    }
+    if (y === Y) ytd += v;
     if (y === Y - 1 && d.date.slice(5) <= md) ytdPrev += v;
   }
   const delta = ytdPrev > 0 ? Math.round(((ytd - ytdPrev) / ytdPrev) * 100) : null;
@@ -61,13 +56,6 @@ export function dashboardHtml(docs, c, customerName) {
   const table = `<table class="dv-table"><thead><tr><th>Monat</th><th>${Y}</th><th>${Y - 1}</th></tr></thead><tbody>${MON_LONG.map(
     (m, i) => `<tr><td>${m}</td><td>${i + 1 > curM ? '–' : eur(byMonth[Y][i])}</td><td>${eur(byMonth[Y - 1][i])}</td></tr>`,
   ).join('')}<tr class="sum"><td>Summe</td><td>${eur(byMonth[Y].reduce((s, v) => s + v, 0))}</td><td>${eur(byMonth[Y - 1].reduce((s, v) => s + v, 0))}</td></tr></tbody></table>`;
-
-  // Top-Kunden
-  const top = [...custSum].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const topMax = top[0]?.[1] || 1;
-  const topHtml = top.length
-    ? top.map(([n, v]) => `<div class="hb" data-tip="${esc(`<b>${esc(n)}</b><span>${eur(v)} netto in ${Y}</span><span>${Math.round((v / ytd) * 100)} % vom Jahresumsatz</span>`)}" tabindex="0"><div class="hb-lbl"><span>${esc(n)}</span><b>${eur(v)}</b></div><div class="hb-track"><span style="width:${(v / topMax) * 100}%"></span></div></div>`).join('')
-    : `<p class="muted">Noch keine Rechnungen in ${Y}.</p>`;
 
   // Offene Posten nach Fälligkeit (brutto, versendet und nicht bezahlt)
   const open = docs.filter((d) => d.kind === 'rechnung' && d.status === 'Versendet' && !d.isStorno);
@@ -92,7 +80,8 @@ export function dashboardHtml(docs, c, customerName) {
   const decided = offers.filter((d) => ['Angenommen', 'Abgelehnt'].includes(d.status)).length;
   const quote = decided ? Math.round((won / decided) * 100) : null;
 
-  return `<h2 class="sec">Dashboard ${Y}</h2>
+  const aging = `<section class="dash-card"><div class="dc-head"><h3>Offene Posten nach Fälligkeit</h3><a class="link" href="#/belege/rechnung?f=offen">Alle offenen Rechnungen →</a></div><div class="hbars aging">${agingHtml}</div></section>`;
+  const main = `<h2 class="sec">Dashboard ${Y}</h2>
   <div class="dash-kpis">
     <div class="kpi"><span>Umsatz ${Y} bis heute (netto)</span><b>${eur(ytd)}</b><small>${delta == null ? `Vorjahr bis heute: ${eur(ytdPrev)}` : `<span class="delta ${delta >= 0 ? 'up' : 'down'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)} %</span> ggü. Vorjahr bis heute (${eur(ytdPrev)})`}</small></div>
     <div class="kpi"><span>Ø Umsatz je Monat</span><b>${eur(ytd / curM)}</b><small>${inv.filter((d) => d.date.startsWith(String(Y))).length} Rechnungen in ${Y}</small></div>
@@ -106,11 +95,8 @@ export function dashboardHtml(docs, c, customerName) {
       <div class="mc-cols">${cols}</div>
     </div>
     <div id="dvTableWrap" hidden>${table}</div>
-  </section>
-  <div class="dash-two">
-    <section class="dash-card"><div class="dc-head"><h3>Top-Kunden ${Y}</h3></div><div class="hbars cust">${topHtml}</div></section>
-    <section class="dash-card"><div class="dc-head"><h3>Offene Posten nach Fälligkeit</h3></div><div class="hbars aging">${agingHtml}</div></section>
-  </div>`;
+  </section>`;
+  return { aging, main };
 }
 
 // Tooltip (Hover mit Maus, Antippen am Handy/Tablet) und Tabellen-Umschalter

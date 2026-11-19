@@ -261,29 +261,29 @@ function viewHome() {
   const angebote = docs.filter((d) => d.kind === 'angebot' && ['Entwurf', 'Versendet'].includes(d.status));
   const auftraege = docs.filter((d) => d.kind === 'auftrag' && d.status !== 'Erledigt');
   const sum = (arr) => arr.reduce((s, d) => s + calcTotals(d, c).gross, 0);
-  const recent = docs.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
+  const recent = [...docs].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
+  const dash = dashboardHtml(docs, c, customerName);
   shell(`
   ${pageHead('Übersicht')}
-  <div class="hero-row">
-    <a class="tile tile-wide" data-k="bericht" href="#/bericht/neu">${icon('bericht')}<span>Regiebericht – unterwegs beim Kunden</span></a>
-    <button type="button" class="tile tile-memo" data-k="merkliste" id="memoQuick">${icon('merkliste')}<span>Notiz / Bestellung${memoOpen(companyId) ? `<small>${memoOpen(companyId)} offen auf der Merkliste</small>` : ''}</span></button>
-  </div>
-  <div class="tiles">
-    <a class="tile" data-k="kunden" href="#/kunde/neu">${icon('kunden')}<span>+ Neuer Kunde</span></a>
+  <div class="tiles tiles6">
     <a class="tile" data-k="angebot" href="#/beleg/neu/angebot">${icon('angebot')}<span>+ Neues Angebot</span></a>
+    <a class="tile" data-k="kunden" href="#/kunde/neu">${icon('kunden')}<span>+ Neuer Kunde</span></a>
     <a class="tile" data-k="auftrag" href="#/beleg/neu/auftrag">${icon('auftrag')}<span>+ Neuer Auftrag</span></a>
+    <a class="tile" data-k="bericht" href="#/bericht/neu">${icon('bericht')}<span>Regiebericht</span></a>
     <a class="tile" data-k="rechnung" href="#/beleg/neu/rechnung">${icon('rechnung')}<span>+ Neue Rechnung</span></a>
+    <button type="button" class="tile tile-memo" data-k="merkliste" id="memoQuick">${icon('merkliste')}<span>Notiz / Bestellung${memoOpen(companyId) ? `<small>${memoOpen(companyId)} offen</small>` : ''}</span></button>
   </div>
+  <h2 class="sec">Zuletzt bearbeitet</h2>
+  ${docList(recent.slice(0, 5))}
+  ${dash.aging}
   <div class="cards stats4">
     <a class="stat" data-k="rechnung" href="#/belege/rechnung?f=offen"><span>Offene Rechnungen</span><b>${eur(sum(offen))}</b><small>${offen.length} ${offen.length === 1 ? 'Rechnung' : 'Rechnungen'}</small></a>
     <a class="stat ${ueberfaellig.length ? 'warn' : ''}" data-k="ueberfaellig" href="#/belege/rechnung?f=ueberfaellig"><span>Überfällig</span><b>${eur(sum(ueberfaellig))}</b><small>${ueberfaellig.length} ${ueberfaellig.length === 1 ? 'Rechnung' : 'Rechnungen'}</small></a>
     <a class="stat" data-k="angebot" href="#/belege/angebot?f=offen"><span>Offene Angebote</span><b>${eur(sum(angebote))}</b><small>${angebote.length} ${angebote.length === 1 ? 'Angebot' : 'Angebote'}</small></a>
     <a class="stat" data-k="auftrag" href="#/belege/auftrag"><span>Laufende Aufträge</span><b>${eur(sum(auftraege))}</b><small>${auftraege.length} ${auftraege.length === 1 ? 'Auftrag' : 'Aufträge'}</small></a>
   </div>
-  ${dashboardHtml(docs, c, customerName)}
-  ${jobsCard()}
-  <h2 class="sec">Zuletzt bearbeitet</h2>
-  ${docList(recent)}`, 'home');
+  ${dash.main}
+  ${jobsCard()}`, 'home');
   wireDashboard($('main'));
   $('#memoQuick').onclick = () => quickMemo({ companyId, toast, onSaved: () => viewHome() });
 }
