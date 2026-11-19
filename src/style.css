@@ -685,3 +685,9 @@ nav.side a.active::before { display: none; }
   .nav-collapsed .side-company { justify-content: flex-start; padding-left: 0.6rem; }
 }
 @media (min-width: 900px) { :root.nav-collapsed nav.side a[data-k], :root.nav-collapsed nav.side a[data-k].active, :root.nav-collapsed nav.side a[data-k]:hover { background: transparent; box-shadow: none; padding-top: 0.12rem; padding-bottom: 0.12rem; } }
+/* Symbole etwas größer (19.11.) */
+nav.side a .ic { width: 40px; height: 40px; padding: 7px; stroke-width: 1.9; }
+@media (min-width: 900px) { .nav-collapsed nav.side a .ic { width: 46px; height: 46px; padding: 9px; } }
+.theme-ic { width: 28px; height: 28px; }
+.sync-ic { width: 38px; height: 38px; }
+.collapse-btn { font-size: 1.5rem; }
