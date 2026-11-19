@@ -738,3 +738,11 @@ main .searchbox { background: var(--card); }
 }
 :root[data-theme="dark"] { --t-angebot: #ffb36b; --t-auftrag: #ff8a3d; --t-rechnung: #ff7070; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --t-angebot: #ffb36b; --t-auftrag: #ff8a3d; --t-rechnung: #ff7070; } }
+
+/* ===== 19.11.: Dunkelmodus – Inhalte heben sich vom Hintergrund ab ===== */
+:root[data-theme="dark"] { --panel: #0d1014; }
+:root[data-theme="dark"] main { --card: #1f252e; --line: #343c48; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --panel: #0d1014; }
+  :root:not([data-theme="light"]) main { --card: #1f252e; --line: #343c48; }
+}
