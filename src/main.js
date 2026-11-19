@@ -157,6 +157,12 @@ const searchBox = (id, value, placeholder) => `<label class="searchbox">${icon('
 function applyColors(c = company()) {
   document.documentElement.dataset.colors = c?.uiColors === 'klassisch' ? 'klassisch' : 'farbig';
 }
+// Seitenleiste schmal (nur Symbole) oder breit – je Gerät gemerkt
+const navCollapsed = () => {
+  try { return localStorage.getItem('navCollapsed') === '1'; } catch { return false; }
+};
+const applyNavCollapsed = () => document.documentElement.classList.toggle('nav-collapsed', navCollapsed());
+applyNavCollapsed();
 function shell(content, active = '') {
   applyColors();
   const companies = db.all('company').sort((a, b) => a.name.localeCompare(b.name));
@@ -195,9 +201,17 @@ function shell(content, active = '') {
     const cls = k === 'kunden' ? 'plain' : k === 'rechnung' && overdue ? 'alert' : '';
     return `<span class="count ${cls}">${cnt[k]}</span>`;
   };
-  const link = ([h, l, k], sub = false) => `<a href="${h}" data-k="${k}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${icon(k)}<span class="lbl">${l}</span></a>`;
+  const link = ([h, l, k], sub = false) => `<a href="${h}" data-k="${k}" title="${l}" class="${sub ? 'sub' : ''} ${active === k ? 'active' : ''}">${icon(k)}<span class="lbl">${l}</span></a>`;
+  // Gruppen (Stammdaten, Verkauf, Projekte) einzeln ein-/ausklappbar; die Gruppe mit der offenen Seite bleibt offen
+  let closed = [];
+  try { closed = JSON.parse(localStorage.getItem('navClosed') || '[]'); } catch {}
   const navHtml = nav
-    .map((n) => (Array.isArray(n[1]) ? `<div class="nav-group">${esc(n[0])}</div>${n[1].map((x) => link(x, true)).join('')}` : link(n)))
+    .map((n) => {
+      if (!Array.isArray(n[1])) return link(n);
+      const isOpen = !closed.includes(n[0]) || n[1].some((x) => x[2] === active);
+      return `<button type="button" class="nav-group" data-grp="${esc(n[0])}" aria-expanded="${isOpen}"><span>${esc(n[0])}</span>${icon('chevron', 'ic gchev')}</button>
+        <div class="nav-sub ${isOpen ? "" : "closed"}">${n[1].map((x) => link(x, true)).join('')}</div>`;
+    })
     .join('');
   app.innerHTML = `
   <header class="top">
@@ -219,6 +233,7 @@ function shell(content, active = '') {
       </div>
       ${navHtml}
       <div class="side-foot">
+        <button class="collapse-btn" id="collapseBtn" title="Navigation ein-/ausklappen" aria-label="Navigation ein-/ausklappen">${navCollapsed() ? '»' : '«'}</button>
         <button class="theme-btn" id="themeBtn" title="Hell / Dunkel umschalten" aria-label="Hell / Dunkel umschalten">${isDark() ? '☀' : '☾'}</button>
         <button class="sync ${esc(s.status)}" id="syncBtn" title="${esc(s.message)}">${syncIcon(s.status)}</button>
       </div>
@@ -233,6 +248,23 @@ function shell(content, active = '') {
   setNav(false);
   $('#menuBtn').onclick = () => setNav(!document.body.classList.contains('nav-open'));
   $('#navBackdrop').onclick = () => setNav(false);
+  $('#collapseBtn').onclick = () => {
+    const v = !navCollapsed();
+    try { localStorage.setItem('navCollapsed', v ? '1' : ''); } catch {}
+    applyNavCollapsed();
+    $('#collapseBtn').textContent = v ? '»' : '«';
+  };
+  $$('.nav-group[data-grp]').forEach((b) => (b.onclick = () => {
+    const sub = b.nextElementSibling;
+    const open = sub.classList.contains('closed');
+    sub.classList.toggle('closed', !open);
+    b.setAttribute('aria-expanded', String(open));
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem('navClosed') || '[]'); } catch {}
+    list = list.filter((g) => g !== b.dataset.grp);
+    if (!open) list.push(b.dataset.grp);
+    try { localStorage.setItem('navClosed', JSON.stringify(list)); } catch {}
+  }));
   $('#sideNav').onclick = (e) => e.target.closest('a') && setNav(false);
   $('#companySel').onchange = (e) => {
     if (e.target.value === '__new') return go('#/firma/neu');
