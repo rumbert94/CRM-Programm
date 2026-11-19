@@ -714,3 +714,10 @@ nav.side .side-tools { flex: none; }
 :root[data-theme="dark"] { --c-kunden: #74c0fc; --c-bericht: #69db7c; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-kunden: #74c0fc; --c-bericht: #69db7c; } }
 :root { --t-angebot: #ffeedd; }
+/* ===== Hauptbereich in hellem Grau statt Weiß (19.11.) – Karten und Listen bleiben weiß ===== */
+:root { --panel: #e9ecf1; }
+:root[data-theme="dark"] { --panel: var(--card); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --panel: var(--card); } }
+main { background: var(--panel); border-color: color-mix(in srgb, var(--line) 80%, #c9ced8); }
+@media (max-width: 899px) { html, body { background: var(--panel); } header.top { background: var(--panel); } }
+main .searchbox { background: var(--card); }
