@@ -721,3 +721,5 @@ nav.side .side-tools { flex: none; }
 main { background: var(--panel); border-color: color-mix(in srgb, var(--line) 80%, #c9ced8); }
 @media (max-width: 899px) { html, body { background: var(--panel); } header.top { background: var(--panel); } }
 main .searchbox { background: var(--card); }
+/* dünner schwarzer Rahmen um die 6 Schaltflächen (19.11.) */
+:root .tiles6 .tile, :root[data-colors="farbig"] .tiles6 .tile[data-k] { border: 1px solid #1d2330; box-sizing: border-box; }
